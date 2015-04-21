@@ -1,6 +1,21 @@
+/**
+ *  My Aeon MultiSensor
+ *
+ *  Copyright 2014 Barry A. Burke
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
+ *  in compliance with the License. You may obtain a copy of the License at:
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software distributed under the License is distributed
+ *  on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License
+ *  for the specific language governing permissions and limitations under the License.
+ *
+ */
 metadata {
 	// Automatically generated. Make future change here.
-	definition (name: "Aeon Multisensor", namespace: "smartthings", author: "SmartThings") {
+	definition (name: "Aeon Multisensor-Custom", namespace: "My Apps", author: "barry@chezburke.com") {
 		capability "Motion Sensor"
 		capability "Temperature Measurement"
 		capability "Relative Humidity Measurement"
@@ -57,12 +72,18 @@ metadata {
 				[value: 59, color: "#90d2a7"],
 				[value: 74, color: "#44b621"],
 				[value: 84, color: "#f1d801"],
-				[value: 95, color: "#d04e00"],
-				[value: 96, color: "#bc2323"]
+				[value: 92, color: "#d04e00"],
+				[value: 98, color: "#bc2323"]
 			]
 		}
+//		valueTile("humidity", "device.humidity", inactiveLabel: false) {
+//			state "humidity", label:'${currentValue}%\nhumidity', unit:""
+//		}
 		valueTile("humidity", "device.humidity", inactiveLabel: false) {
-			state "humidity", label:'${currentValue}% humidity', unit:""
+			state "humidity", label:'${currentValue}%\nhumidity', unit:"%", backgroundColors: [
+            		[value:   0, color: "#0033cc"],
+                    [value: 100, color: "#ff66ff"]
+            ]
 		}
 		valueTile("illuminance", "device.illuminance", inactiveLabel: false) {
 			state "luminosity", label:'${currentValue} ${unit}', unit:"lux"
@@ -82,6 +103,7 @@ metadata {
 // Parse incoming device messages to generate events
 def parse(String description)
 {
+//	log.debug "Parse Description: $description"
 	def result = []
 	def cmd = zwave.parse(description, [0x31: 2, 0x30: 1, 0x84: 1])
 	if (cmd) {
@@ -167,16 +189,24 @@ def zwaveEvent(physicalgraph.zwave.Command cmd) {
 
 def configure() {
 	delayBetween([
+		// send temperature, humidity, and illuminance every 8 minutes
+		zwave.configurationV1.configurationSet(parameterNumber: 101, size: 4, scaledConfigurationValue: 128|64|32),
+		zwave.configurationV1.configurationSet(parameterNumber: 111, size: 4, scaledConfigurationValue: 8*60),
+
+		// send battery every 19 hours
+		zwave.configurationV1.configurationSet(parameterNumber: 102, size: 4, scaledConfigurationValue: 1),
+		zwave.configurationV1.configurationSet(parameterNumber: 112, size: 4, scaledConfigurationValue: 19*60*60),
+
+		// send no-motion report 30 seconds after motion stops
+		zwave.configurationV1.configurationSet(parameterNumber: 3, size: 2, scaledConfigurationValue: 30),
+
 		// send binary sensor report instead of basic set for motion
-		zwave.configurationV1.configurationSet(parameterNumber: 5, size: 1, scaledConfigurationValue: 2).format(),
+		zwave.configurationV1.configurationSet(parameterNumber: 5, size: 1, scaledConfigurationValue: 2),
 
-		// send no-motion report 15 seconds after motion stops
-		zwave.configurationV1.configurationSet(parameterNumber: 3, size: 2, scaledConfigurationValue: 15).format(),
+		// disable notification-style motion events
+		zwave.notificationV3.notificationSet(notificationType: 7, notificationStatus: 0),
 
-		// send all data (temperature, humidity, illuminance & battery) periodically
-		zwave.configurationV1.configurationSet(parameterNumber: 101, size: 4, scaledConfigurationValue: 225).format(),
-
-		// set data reporting period to 5 minutes
-		zwave.configurationV1.configurationSet(parameterNumber: 111, size: 4, scaledConfigurationValue: 300).format()
-	])
+		zwave.batteryV1.batteryGet(),
+		zwave.sensorBinaryV2.sensorBinaryGet(),
+	]) + ["delay 2000", zwave.wakeUpV1.wakeUpNoMoreInformation().format()]
 }
