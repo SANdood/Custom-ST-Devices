@@ -1,5 +1,5 @@
 metadata {
-	definition (name: "Aeon Multisensor Gen5", namespace: "smartthings", author: "SmartThings") {
+	definition (name: "Aeon Multisensor Gen5-Custom", namespace: "smartthings", author: "SmartThings") {
 		capability "Motion Sensor"
 		capability "Temperature Measurement"
 		capability "Relative Humidity Measurement"
@@ -63,8 +63,15 @@ metadata {
 				[value: 98, color: "#bc2323"]
 			]
 		}
+//		valueTile("humidity", "device.humidity", inactiveLabel: false) {
+//			state "humidity", label:'${currentValue}% humidity', unit:""
+//		}
+
 		valueTile("humidity", "device.humidity", inactiveLabel: false) {
-			state "humidity", label:'${currentValue}% humidity', unit:""
+			state "humidity", label:'${currentValue}%\nhumidity', unit:"%", backgroundColors: [
+            		[value:   0, color: "#0033cc"],
+                    [value: 100, color: "#ff66ff"]
+            ]
 		}
 		valueTile("illuminance", "device.illuminance", inactiveLabel: false) {
 			state "luminosity", label:'${currentValue} ${unit}', unit:"lux"
@@ -73,8 +80,12 @@ metadata {
 			state "battery", label:'${currentValue}% battery', unit:""
 		}
 
+		standardTile("configure", "device.configure", inactiveLabel: false, decoration: "flat") {
+			state "configure", label:'', action:"configuration.configure", icon:"st.secondary.configure"
+		}
+    
 		main(["motion", "temperature", "humidity", "illuminance"])
-		details(["motion", "temperature", "humidity", "illuminance", "battery"])
+		details(["motion", "temperature", "humidity", "illuminance", "battery", "configure"])
 	}
 }
 
@@ -193,12 +204,12 @@ def configure() {
 		zwave.configurationV1.configurationSet(parameterNumber: 101, size: 4, scaledConfigurationValue: 128|64|32),
 		zwave.configurationV1.configurationSet(parameterNumber: 111, size: 4, scaledConfigurationValue: 8*60),
 
-		// send battery every 20 hours
+		// send battery every 19 hours
 		zwave.configurationV1.configurationSet(parameterNumber: 102, size: 4, scaledConfigurationValue: 1),
-		zwave.configurationV1.configurationSet(parameterNumber: 112, size: 4, scaledConfigurationValue: 20*60*60),
+		zwave.configurationV1.configurationSet(parameterNumber: 112, size: 4, scaledConfigurationValue: 19*60*60),
 
-		// send no-motion report 60 seconds after motion stops
-		zwave.configurationV1.configurationSet(parameterNumber: 3, size: 2, scaledConfigurationValue: 60),
+		// send no-motion report 30 seconds after motion stops
+		zwave.configurationV1.configurationSet(parameterNumber: 3, size: 2, scaledConfigurationValue: 30),
 
 		// send binary sensor report instead of basic set for motion
 		zwave.configurationV1.configurationSet(parameterNumber: 5, size: 1, scaledConfigurationValue: 2),
