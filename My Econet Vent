@@ -17,7 +17,7 @@
 
 metadata {
 	// Automatically generated. Make future change here.
-	definition (name: "EcoNet Vent", namespace: "smartthings", author: "SmartThings") {
+	definition (name: "My EcoNet Vent", namespace: "smartthings", author: "SmartThings") {
 		capability "Switch Level"
 		capability "Actuator"
 		capability "Switch"
@@ -52,9 +52,9 @@ metadata {
 	}
 
 	tiles {
-		standardTile("switch", "device.switch", width: 2, height: 2, canChangeIcon: true) {
-			state "on", action:"switch.off", icon:"st.vents.vent-open-text", backgroundColor:"#53a7c0"
-			state "off", action:"switch.on", icon:"st.vents.vent-closed", backgroundColor:"#ffffff"
+		standardTile("switch", "device.switch", width: 2, height: 2, canChangeIcon: false) {
+			state "on", label: 'Open', action:"switch.off", icon:"st.vents.vent-open", backgroundColor:"#53a7c0"
+			state "off", label: 'Closed', action:"switch.on", icon:"st.vents.vent", backgroundColor:"#ffffff"
 		}
         valueTile("battery", "device.battery", inactiveLabel: false, decoration: "flat") {
 			state "battery", label:'${currentValue}% battery', unit:""
@@ -162,7 +162,7 @@ def setLevel(value) {
 	delayBetween([
 		zwave.basicV1.basicSet(value: value).format(),
 		zwave.switchMultilevelV1.switchMultilevelGet().format()
-	])
+	],3000)
 }
 
 def setLevel(value, duration) {
@@ -180,9 +180,9 @@ def refresh() {
 def poll() {
     
 	if (secondsPast(state.lastbatt, 36*60*60)) {
-		return zwave.batteryV1.batteryGet().format()
-	} else {
-    
+		// zwave.batteryV1.batteryGet().format()
+        refresh()
+	} else {    
 		return zwave.switchMultilevelV1.switchMultilevelGet().format()
 	}
 }
