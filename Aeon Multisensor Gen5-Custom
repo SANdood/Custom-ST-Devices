@@ -45,6 +45,11 @@ metadata {
 
 		status "wake up" : "command: 8407, payload: "
 	}
+    
+    preferences {
+		input description: "The offset allows you to calibrate your temperature. Update by entering whole negative or positive number. E.g. -3 or 5.", displayDuringSetup: false, type: "paragraph", element: "paragraph"
+		input "tempOffset", "decimal", title: "Temperature Offset", description: "Adjust temperature by this many degrees", range: "*..*", displayDuringSetup: false
+	}
 
 	tiles {
 		standardTile("motion", "device.motion", width: 2, height: 2) {
@@ -147,8 +152,20 @@ def zwaveEvent(physicalgraph.zwave.commands.sensormultilevelv5.SensorMultilevelR
 		case 1:
 			map.name = "temperature"
 			def cmdScale = cmd.scale == 1 ? "F" : "C"
-			map.value = convertTemperatureIfNeeded(cmd.scaledSensorValue, cmdScale, cmd.precision)
+            Float value = convertTemperatureIfNeeded(cmd.scaledSensorValue, cmdScale, cmd.precision).toFloat()
+            log.debug "TEMP $value"
+			if (tempOffset) {
+				Float offset = tempOffset.toFloat()	
+				Float v = value
+				value = (v + offset) as Float
+			}
+ 		   	Float nv = Math.round( (value as Float) * 10.0 ) / 10	// Need at least one decimal point
+		   	value = nv as Float
+			def descriptionText = "${device.displayName} Temperature is ${value}°${temperatureScale}"
+			map.value = value
 			map.unit = getTemperatureScale()
+			map.name = "temperature"
+            map.descriptionText = descriptionText          
 			break;
 		case 3:
 			map.name = "illuminance"
@@ -157,8 +174,10 @@ def zwaveEvent(physicalgraph.zwave.commands.sensormultilevelv5.SensorMultilevelR
 			break;
 		case 5:
 			map.name = "humidity"
-			map.value = cmd.scaledSensorValue.toInteger()
+			def value = cmd.scaledSensorValue.toInteger()
+            map.value = value
 			map.unit = "%"
+            map.descriptionText = "${device.displayName} Humidity is ${value}%"
 			break;
 		default:
 			map.descriptionText = cmd.toString()
