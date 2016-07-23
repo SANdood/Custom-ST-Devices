@@ -149,6 +149,7 @@ def globalPage() {
 		}
 
         section("Push Notifications") {
+        		input("recipients", "contact", title: "Send push notifications to", required: false)
                 input (name: "notify", type: "enum", title: "Select what push notifications to receive.", required: false, multiple: true,
                 metadata: [values: ['Warnings', 'Daily', 'Weekly', 'Weather', 'Moisture']])                
         } 
@@ -926,7 +927,7 @@ def checkRunMap(){
             zone++
         }
         log.debug "Weekly water summary: ${zoneSummary}"
-        sendPush "Weekly water summary: ${zoneSummary}"
+        send "Weekly water summary: ${zoneSummary}"
     }    
     
     //get & set watering times for today
@@ -1230,16 +1231,16 @@ def note(status, message, type){
     if(notify)
     {
       if (notify.contains('Daily') && type == "d"){       
-        sendPush "${message}"
+        send "${message}"
       }
       if (notify.contains('Weather') && type == "f"){     
-        sendPush "${message}"
+        send "${message}"
       }
       if (notify.contains('Warnings') && type == "w"){     
-        sendPush "${message}"
+        send "${message}"
       }
       if (notify.contains('Moisture') && type == "m"){        
-        sendPush "${message}"
+        send "${message}"
       }      
     }
 }
@@ -1760,4 +1761,16 @@ def zoneSetPage15(){
 def zoneSetPage16(){
 	state.app = 16
     zoneSetPage()
-    }
+	}
+
+def send(msg) {
+	if (location.contactBookEnabled && recipients) {
+    	log.info ( "Sending '${msg}' to selected contacts..." ) 
+    	sendNotificationToContacts(msg, recipients, [event: true])
+	} else {
+    	log.info ( "Sending Push Notification '${msg}'..." ) 
+    	send( msg )
+    } 
+    // Always send to site Notifications
+    //sendNotificationEvent(msg)
+}
