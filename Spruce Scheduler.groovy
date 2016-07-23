@@ -149,13 +149,14 @@ def globalPage() {
 		}
 
         section("Push Notifications") {
-         	    input("recipients", "contact", title: "Send push notifications to", required: false) 
+                input("recipients", "contact", title: "Send push notifications to", required: false) 
                 input (name: "notify", type: "enum", title: "Select what push notifications to receive.", required: false, multiple: true,
                 metadata: [values: ['Warnings', 'Daily', 'Weekly', 'Weather', 'Moisture']])                
         } 
          
     }
 }
+ 
  
 def weatherPage() {
     dynamicPage(name: "weatherPage", title: "Weather settings") {
@@ -852,7 +853,7 @@ def busy(){
     	note("active", "${app.label} already running, skipping additional start", "d")
     	return true
         }
-    else if (switches.currentValue('switch').contains('off') && !switches.currentValue('status').contains('active')) return false
+    else if (switches.currentValue('switch').contains('off') && !switches.currentValue('status').contains('active') && !switches.currentValue('status').contains('season') && !switches.currentValue('status').contains('pause')) return false
     else {
     	subscribe switches, "switch.off", busyOff      
     	note("active", "Another schedule running, waiting to start ${app.label}", "d")
@@ -862,7 +863,7 @@ def busy(){
 
 def busyOff(evt){
 	unsubscribe(switches)
-    note("pause", "${app.label} resuming pre-check after another schedule finished.", "d")
+    //note("pause", "${app.label} resuming pre-check after another schedule finished.", "d")
     runIn(10, preCheck)   
 }
 
@@ -889,8 +890,8 @@ def cycleOn(){
         subscribe contact, "contact.open", doorOpen
         subscribe contact, "contact.closed", doorClosed
     }        
-    if (sync != null && !sync.currentValue('status').contains('finished')){
-        subscribe sync, "status.finished", syncOn
+    if (sync != null && ( !sync.currentValue('switch').contains('off') || sync.currentValue('status').contains('active') || sync.currentValue('status').contains('pause') || sync.currentValue('status').contains('season') ) ){
+        subscribe sync, "switch.off", syncOn
         note("pause", "waiting for $sync to complete before starting schedule", "w")
     }
     else if (contact == null || !contact.currentValue('contact').contains('open')) resume()
@@ -960,6 +961,7 @@ def cycleLoop(i)
 
     while(zone <= 16)
     {
+    log.debug "cycleLoop(${zone})"
         rtime = 0
         //change to tpw(?)
         if(settings["zone${zone}"] != null && settings["zone${zone}"] != 'Off' && nozzle(zone) != 4)
@@ -967,6 +969,7 @@ def cycleLoop(i)
 		  // First check if we run this zone today, use either dpwMap or even/odd date
 		  def dpw = getDPW(zone)          
           def runToday = 0
+          log.debug "dpw: ${dpw}"
           if (days && (days.contains('Even') || days.contains('Odd'))) {
             def daynum = new Date().format("dd", location.timeZone)
             int dayint = Integer.parseInt(daynum)
@@ -978,7 +981,8 @@ def cycleLoop(i)
             def today = dpwMap[weekDay]
             log.debug "Zone: ${zone} dpw: ${dpw} weekDay: ${weekDay} dpwMap: ${dpwMap} today: ${today}"
             runToday = dpwMap[weekDay]	//1 or 0
-          }         
+          } 
+          log.debug "runToday = ${runToday}"
           //if no learn check moisture sensors on available days
           if (!learn && (settings["sensor${zone}"] != null) ) runToday = 1
           
@@ -999,6 +1003,7 @@ def cycleLoop(i)
                 state.daycount[zone-1] = 0
                 cyc = cycles(zone)
                 dpw = getDPW(zone)
+                log.debug "cyc: ${cyc}, dpw: ${dpw}"
                 rtime = calcRunTime(getTPW(zone), dpw)                
                 //daily weather adjust if no sensor
                 if(isSeason && settings["sensor${zone}"] == null) rtime = Math.round(rtime / cyc * state.seasonAdj / 100)
@@ -1014,6 +1019,7 @@ def cycleLoop(i)
         timeMap."${zone+1}" = "${rtime}"
         zone++  
     }
+    log.debug "cycleLoop() done"
 	if (soilString) {
     	soilString = "Moisture Sensors:\n" + soilString
         note("moisture", "${soilString}","m")
