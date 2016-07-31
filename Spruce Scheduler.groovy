@@ -98,7 +98,7 @@ def startPage(){
             section(""){
             href(name: "globalPage", title: "Schedule settings", required: false, page: "globalPage",
                 image: "http://www.plaidsystems.com/smartthings/st_settings.png",                
-                description: "Watering On: ${enableString()}\nWatering Time: ${startTimeString()}\nDays:${daysString()}\nNotifications:\n${notifyString()}")
+                description: "Schedule: ${enableString()}\nWatering Time: ${startTimeString()}\nDays:${daysString()}\nNotifications:\n${notifyString()}")
              
             }
              
@@ -193,8 +193,9 @@ private startTimeString(){
 }
 
 def enableString(){
-	if(enable) return "${enable}"
-    return "False"
+	if(enable && enableManual) return "On, Manual Enabled"
+    else if (enable) return "On"
+    return "Off"
 }
 
 def contactSensorString(){
@@ -835,9 +836,9 @@ def manualStart(evt){
         if (runNowMap)
         { 
             state.run = true        
-            runNowMap = "${app.label} manually started, watering in 30 seconds:\n" + runNowMap
+            runNowMap = "${app.label} manually started, watering in 1 minute:\n" + runNowMap
             note("active", "${runNowMap}", "d")                      
-            runIn(30, cycleOn)   //start water program
+            runIn(60, cycleOn)   //start water program
         }
 
         else {
@@ -855,7 +856,7 @@ def busy(){
     	note("active", "${app.label} already running, skipping additional start", "d")
     	return true
         }
-    else if (switches.currentValue('switch').contains('off') && !switches.currentValue('status').contains('active') && !switches.currentValue('status').contains('season') && !switches.currentValue('status').contains('pause')) return false
+    else if (switches.currentValue('switch').contains('off') && !switches.currentValue('status').contains('active') && !switches.currentValue('status').contains('season') && !switches.currentValue('status').contains('pause') && !switches.currentValue('status').contains('moisture')) return false
     else {
     	subscribe switches, "switch.off", busyOff      
     	note("active", "Another schedule running, waiting to start ${app.label}", "d")
@@ -887,18 +888,21 @@ def preCheck(){
 //start water program
 def cycleOn(){       
     unschedule(cycleOn)
-    subscribe switches, "switch.off", cycleOff
-    if (contact != null){
-        subscribe contact, "contact.open", doorOpen
-        subscribe contact, "contact.closed", doorClosed
-    }        
+    unsubscribe()    
+            
     if (sync != null && ( !sync.currentValue('switch').contains('off') || sync.currentValue('status').contains('active') || sync.currentValue('status').contains('pause') || sync.currentValue('status').contains('season') ) ){
         subscribe sync, "switch.off", syncOn
         note("pause", "waiting for $sync to complete before starting schedule", "w")
     }
-    else if (contact == null || !contact.currentValue('contact').contains('open')) resume()
-    else note("pause", "$contact opened $switches paused watering", "w")
-    
+    else if (contact == null || !contact.currentValue('contact').contains('open')) {
+    	subscribe switches, "switch.off", cycleOff
+        subscribe contact, "contact.open", doorOpen                
+        resume()
+       	}
+    else {
+    	subscribe switches, "switch.off", cycleOff
+        note("pause", "$contact opened $switches paused watering", "w")
+    }
 }
  
 //when switch reports off, watering program is finished
@@ -936,10 +940,10 @@ def checkRunMap(){
     if (runNowMap)
     { 
         state.run = true            
-        def runTime = now() + 30000
+        def runTime = now() + 60000
 		log.debug runTime
         schedule(runTime, cycleOn)	//start water
-        runNowMap = "${app.label} water will begin in 30 seconds:\n" + runNowMap
+        runNowMap = "${app.label} water will begin in 1 minute:\n" + runNowMap
         note("active", "${runNowMap}", "d")
     }
     else {
@@ -1025,7 +1029,8 @@ def cycleLoop(i)
     
     //send settings to Spruce Controller
     switches.settingsMap(timeMap,4002)
-    writeCycles()
+    def runTime = now() + 30000
+	schedule(runTime, writeCycles)    
     return runNowMap += pumpMap    
 }
 
@@ -1062,6 +1067,8 @@ def syncOn(evt){
 
 def doorOpen(evt){
     note("pause", "$contact opened $switches paused watering", "w")
+    unsubscribe(switches)
+    subscribe contact, "contact.closed", doorClosed
     switches.off()        
 }
      
@@ -1162,12 +1169,13 @@ def moisture(i)
         return [1,""]
     }
 
-    // Check if sensor is reporting 6-> 12 hours -> 24 hours   
-    def sixHours = new Date(now() - (1000 * 60 * 60 * 24).toLong())
-    def recentActivity = (settings["sensor${i}"].eventsSince(sixHours)?.findAll { it.name == "humidity" })        
-    if (recentActivity == []) {
+    // Check if sensor is reporting 6-> 12 hours -> 48 hours   
+    def sixHours = new Date(now() - (1000 * 60 * 60 * 48).toLong())    
+    def eventsSinceYesterday = (settings["sensor${i}"].eventsSince(sixHours, [max: 50])?.findAll { it.name == "humidity" })
+    //log.debug "there have been ${eventsSinceYesterday.size()} since yesterday"
+    if (eventsSinceYesterday.size() < 1){    
     	//change to seperate warning note?
-        note("warning", "Please check ${settings["sensor${i}"]}, no activity in the last 12 hours", "w")
+        //note("warning", "Please check ${settings["sensor${i}"]}, no activity in the last 12 hours", "w")
         return [1, "Please check ${settings["sensor${i}"]}, no activity in the last 12 hours\n"]	//change to 1
     }
     
@@ -1273,11 +1281,11 @@ def getDrySp(i){
     else{
         switch (settings["option${i}"]) {
             case "Sand":
-                return 15
+                return 22
             case "Clay":
-                return 35  
+                return 38  
             default:
-                return 20
+                return 28
         }
     }
 }    
@@ -1479,11 +1487,10 @@ def isWeather(){
             setSeason()
         }
     }
-    
+       
+    note("season", weatherString , "f")
     //move day check here to allow weathercheck every day
     if (isDay() == false) return true
-    
-    note("season", weatherString , "f")
     
     def setrainDelay = "0.2"
     if (rainDelay) setrainDelay = rainDelay    
@@ -1506,8 +1513,7 @@ def isWeather(){
     return false    
 }
 
-def getDPWDays(dpw)
-{
+def getDPWDays(dpw){
   if(dpw == 1)
      return state.DPWDays1
   if(dpw == 2)
@@ -1761,16 +1767,16 @@ def zoneSetPage15(){
 def zoneSetPage16(){
 	state.app = 16
     zoneSetPage()
-	}
-
-def send(msg) {
-	if (location.contactBookEnabled && recipients) {
-    	log.info ( "Sending '${msg}' to selected contacts..." ) 
-    	sendNotificationToContacts(msg, recipients, [event: true])
-	} else {
-    	log.info ( "Sending Push Notification '${msg}'..." ) 
-    	send( msg )
-    } 
-    // Always send to site Notifications
-    //sendNotificationEvent(msg)
+    }
+    
+def send(msg) {		
+	if (location.contactBookEnabled && recipients) {		
+    	log.info ( "Sending '${msg}' to selected contacts..." )       		
+    	sendNotificationToContacts(msg, recipients, [event: true])		
+	} else {		
+    	log.info ( "Sending Push Notification '${msg}'..." ) 		
+    	send( msg )		
+    } 		
+    // Always send to site Notifications		
+    //sendNotificationEvent(msg)		
 }
