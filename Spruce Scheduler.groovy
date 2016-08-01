@@ -1400,11 +1400,16 @@ def isWeather(){
     def qFact = 0.7
     // Forecast rain
     Map sdata = getWeatherFeature("forecast10day", wzipcode)
-    
-    log.debug sdata.response  
-    if(sdata.response.containsKey('error') || sdata == null) {
-    	note("warning", "Check Zipcode setting, error:\n${sdata.response.error}" , "w")
-        return false
+    if (sdata != null) {
+    	log.debug sdata.response
+		if(sdata.response.containsKey('error') {
+    		note("warning", "Check Zipcode setting, error:\n${sdata.response.error}" , "w")
+        	return false
+		}
+    } else {
+    	log.debug "sdata is null"
+    	note("warning", "Check Zipcode setting, error: null" , "w")
+    	return false
     }
     def qpf = sdata.forecast.simpleforecast.forecastday.qpf_allday.mm       
     def qpfTodayIn = 0
@@ -1415,17 +1420,31 @@ def isWeather(){
     log.debug "qpfTomIn ${qpfTomIn}"
     // current conditions
     Map cond = getWeatherFeature("conditions", wzipcode)    
-           
+    if (cond != null) {
+    	log.debug cond.response
+		if(cond.response.containsKey('error') {
+    		note("warning", "Can't get weather conditions, error:\n${sdata.response.error}" , "w")
+        	return false
+		}
+    } else {
+    	log.debug "cond is null"
+    	note("warning", "Can't get weather conditions, error: null" , "w")
+    	return false
+    }
     def TRain = 0
     if (cond.current_observation.precip_today_metric.isNumber()) TRain = Math.round(cond.current_observation.precip_today_metric.toInteger() /25.4 * 100) /100
     log.debug "TRain ${TRain}"
     // reported rain
     def YRain = 0
     Map yCond = getWeatherFeature("yesterday", wzipcode)
-    if(yCond.response.containsKey('error') || yCond == null) {
-    	log.debug "Weather check, error:\n${yCond.response.error}"
-        //note("warning", "Weather check, error:\n${yCond.response.error}" , "w")       
-    }
+    if (yCond == null) {
+       	log.debug "Weather check (yesterday), error: yCond is null"
+    	note("warning", "Weather check (yesterday), error: yCond is null" , "w")
+    	yRain = 0
+    } else if (yCond.response.containsKey('error') {
+		log.debug "Weather check (yesterday), error:\n${yCond.response.error}"
+    	note("warning", "Weather check (yesterday), error:\n${yCond.response.error}" , "w")
+	}
     else if (yCond.history.dailysummary.precipi.get(0).isNumber()) YRain = yCond.history.dailysummary.precipi.get(0)
     else YRain = 0   
     if(TRain > qpfTodayIn) qpfTodayIn = TRain    
@@ -1453,7 +1472,12 @@ def isWeather(){
     def avgHigh = Math.round((getHigh.get(0).toInteger() + getHigh.get(1).toInteger() + getHigh.get(2).toInteger() + getHigh.get(3).toInteger() + getHigh.get(4).toInteger())/5)    
     
     Map citydata = getWeatherFeature("geolookup", wzipcode)
-    def weatherString = "${citydata.location.city} weather\n Today: ${getHigh.get(0)}F,  ${qpfTodayIn}in rain\n Tomorrow: ${getHigh.get(1)}F,  ${qpfTomIn}in rain\n Yesterday:  ${YRain}in rain "
+    def weatherString = "Today's weather:  ${getHigh.get(0)}F,  ${qpfTodayIn}in rain\n Tomorrow: ${getHigh.get(1)}F,  ${qpfTomIn}in rain\n Yesterday:  ${YRain}in rain "
+    if (citydata != null) {
+    	if (citydata.response.containsKey('error')) {
+    		log.debug "(geolookup) failed, error: ${citydata.response.error}"
+    	} else weatherString = "${citydata.location.city} weather\n Today: ${getHigh.get(0)}F,  ${qpfTodayIn}in rain\n Tomorrow: ${getHigh.get(1)}F,  ${qpfTomIn}in rain\n Yesterday:  ${YRain}in rain "
+    } else log.debug "(geolookup) error: citydata is null"
     
     if (isSeason)
     {        
@@ -1470,21 +1494,27 @@ def isWeather(){
 
             //get daylight
             Map astro = getWeatherFeature("astronomy", wzipcode)
-            def getsunRH = astro.moon_phase.sunrise.hour
-            def getsunRM = astro.moon_phase.sunrise.minute
-            def getsunSH = astro.moon_phase.sunset.hour
-            def getsunSM = astro.moon_phase.sunset.minute
-            def daylight = ((getsunSH.toInteger() * 60) + getsunSM.toInteger())-((getsunRH.toInteger() * 60) + getsunRM.toInteger())
-			if (daylight >= 850) daylight = 850
+            if (astro == null) {
+            	log.debug "(astronomy) error: astro is null"
+            } else if (astro.response.containsKey('error')) {
+            	log.debug "Seasonal adjustment, error: ${astro.response.error}"
+            } else {
+            	def getsunRH = astro.moon_phase.sunrise.hour
+        		def getsunRM = astro.moon_phase.sunrise.minute
+            	def getsunSH = astro.moon_phase.sunset.hour
+            	def getsunSM = astro.moon_phase.sunset.minute
+            	def daylight = ((getsunSH.toInteger() * 60) + getsunSM.toInteger())-((getsunRH.toInteger() * 60) + getsunRM.toInteger())
+				if (daylight >= 850) daylight = 850
             
             //set seasonal adjustment
             //state.weekseasonAdj = Math.round((daylight/700 * avgHigh/75) * ((1-(humWeek/100)) * avgHigh/75)*100)
-            state.weekseasonAdj = Math.round(daylight/700 * avgHigh/70 * qFact * 100)
+            	state.weekseasonAdj = Math.round(daylight/700 * avgHigh/70 * qFact * 100)
 
             //apply seasonal time adjustment
-            weatherString += "\n Applying seasonal adjustment of ${state.weekseasonAdj-100}% this week"
+            	weatherString += "\n Applying seasonal adjustment of ${state.weekseasonAdj-100}% this week"
             //note("season", "Applying seasonal adjustment of ${state.weekseasonAdj-100}% this week", "f")
-            setSeason()
+            	setSeason()
+            }
         }
     }
        
@@ -1775,8 +1805,6 @@ def send(msg) {
     	sendNotificationToContacts(msg, recipients, [event: true])		
 	} else {		
     	log.info ( "Sending Push Notification '${msg}'..." ) 		
-    	send( msg )		
+    	sendPush( msg )		
     } 		
-    // Always send to site Notifications		
-    //sendNotificationEvent(msg)		
 }
