@@ -1,5 +1,5 @@
 /**
- *  Spruce Scheduler Pre-release V2.52 7/14/2016
+ *  Spruce Scheduler Pre-release V2.52.3 8/9/2016
  *
  *	
  *  Copyright 2015 Plaid Systems
@@ -48,10 +48,10 @@
  */
  
 definition(
-    name: "Spruce Scheduler v2.52",
+    name: "Spruce Scheduler",
     namespace: "plaidsystems",
     author: "Plaid Systems",
-    description: "Spruce automatic water scheduling app v2.52",
+    description: "Spruce automatic water scheduling app v2.52.3",
     category: "Green Living",
     iconUrl: "http://www.plaidsystems.com/smartthings/st_spruce_leaf_250f.png",
     iconX2Url: "http://www.plaidsystems.com/smartthings/st_spruce_leaf_250f.png",
@@ -149,9 +149,9 @@ def globalPage() {
 		}
 
         section("Push Notifications") {
-        		input("recipients", "contact", title: "Send push notifications to", required: false)
                 input (name: "notify", type: "enum", title: "Select what push notifications to receive.", required: false, multiple: true,
-                metadata: [values: ['Warnings', 'Daily', 'Weekly', 'Weather', 'Moisture']])                
+                metadata: [values: ['Warnings', 'Daily', 'Weekly', 'Weather', 'Moisture']])
+                input("recipients", "contact", title: "Send push notifications to", required: false)
         } 
          
     }
@@ -431,7 +431,23 @@ def zoneString(){
     else numberString += "\nSensor mode: Delay"
     return numberString
     }
-    
+
+/*//code change for ST update file -> change input to zoneNumberEnum   
+def zoneActive(z){	
+    if (!zoneNumberEnum && zoneNumber && zoneNumber >= z.toInteger()) return true        
+    else if (!zoneNumberEnum && zoneNumber && zoneNumber != z.toInteger()) return false
+    else if (zoneNumberEnum.contains(z)) return true
+    return false
+}
+
+def zoneString(){
+	def numberString = "Add zones to setup"    
+    if (zoneNumberEnum) numberString = "Zones enabled: " + "${zoneNumberEnum}"    
+    if (learn) numberString += "\nSensor mode: Adaptive"
+    else numberString += "\nSensor mode: Delay"
+    return numberString
+    }
+*/    
 def zoneSettingsPage(){
 	dynamicPage(name: "zoneSettingsPage", title: "Zone Configuration") {
         	section(""){
@@ -782,9 +798,16 @@ def installSchedule(){
 //write initial zone settings to device at install/update
 def writeSettings(){    
     if(!state.tpwMap) state.tpwMap = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
-    if(!state.dpwMap) state.dpwMap = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]    
+    if(!state.dpwMap) state.dpwMap = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+    if(!state.setMoisture) state.setMoisture = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
     if(!state.seasonAdj) state.seasonAdj = 0
     if(!state.weekseasonAdj) state.weekseasonAdj = 0
+    /*
+    if(!learn) getMoisture()
+    else {
+    	def checkMoisture = timeToday(startTime, location.timeZone).getTime() + 86400001
+    	schedule(checkMoisture, getMoisture)	//set moisture after 1 week of running in no learn mode
+        }*/
     setSeason()	    
 }
 
@@ -825,7 +848,7 @@ def getRunDays(day1,day2,day3,day4,day5,day6,day7)
 
 def getRandomNumber(int num){
     Random random = new Random()
-    return random.nextInt(40 ** num)
+    return random.nextInt(30 ** num) + 20
 }
 
 //start manual schedule
@@ -882,7 +905,7 @@ def preCheck(){
             state.run = false     
             note("skipping", "${app.label} not scheduled for today.", "d")
             }
-	}	
+	}    
 }
 
 //start water program
@@ -987,7 +1010,8 @@ def cycleLoop(i)
             runToday = dpwMap[weekDay]	//1 or 0
           }         
           //if no learn check moisture sensors on available days
-          if (!learn && (settings["sensor${zone}"] != null) ) runToday = 1
+          //if (!learn && (settings["sensor${zone}"] != null) ) runToday = 1
+          if (settings["sensor${zone}"] != null) runToday = 1
           
           //manual=0 force run
           if (i == 0) runToday = 1
@@ -1029,8 +1053,8 @@ def cycleLoop(i)
     
     //send settings to Spruce Controller
     switches.settingsMap(timeMap,4002)
-    def runTime = now() + 30000
-	schedule(runTime, writeCycles)    
+    def writeTime = now() + 30000
+	schedule(writeTime, writeCycles)    
     return runNowMap += pumpMap    
 }
 
@@ -1054,6 +1078,7 @@ def writeCycles(){
         zone++
     }
     switches.settingsMap(cyclesMap, 4001)
+    unschedule(writeCycles)
 }
 
 def resume(){
@@ -1061,8 +1086,9 @@ def resume(){
 }
 
 def syncOn(evt){
+    unsubscribe(sync)
     note("active", "$sync complete, starting scheduled program", "w")
-    cycleOn()
+    runIn(30, cycleOn)
 }
 
 def doorOpen(evt){
@@ -1177,12 +1203,18 @@ def moisture(i)
     	//change to seperate warning note?
         //note("warning", "Please check ${settings["sensor${i}"]}, no activity in the last 12 hours", "w")
         return [1, "Please check ${settings["sensor${i}"]}, no activity in the last 12 hours\n"]	//change to 1
-    }
+    }    
     
     def latestHum = settings["sensor${i}"].latestValue("humidity")
+    
+    //set moisture sp after no watering for 2 days and no rain the previous day
+    if (state.setMoisture.get(i.toInteger()-1) == 0 && state.daycount.get(i.toInteger()-1) >= 2 && state.Rain.get(getWeekDay()-1) == "0.00"){
+    	state.setMoisture.putAt(i.toInteger()-1, latestHum)
+    	log.debug "zone ${i} moisture sp set to ${state.setMoisture.get(i.toInteger()-1)}%"
+        }
+    
     def spHum = getDrySp(i).toInteger()
-    //def moistureList = []
-    if (!learn) 
+    if (!learn || state.setMoisture.get(i.toInteger()-1) == 0)
     {
         // no learn mode, only looks at target moisture level
 		if(latestHum <= spHum) {
@@ -1197,30 +1229,28 @@ def moisture(i)
     //learn mode
     def tpw = getTPW(i)    
     
-    //change to daycount
-    //def tpwAdjust = Math.round((spHum - latestHum) / getDPW(i))
+    //change to daycount    
     def daycount = 1
     if (state.daycount[i-1] > 0) daycount = state.daycount[i-1]    
     def tpwAdjust = 0
-    if (spHum != latestHum) tpwAdjust = Math.round((spHum - latestHum) / daycount)    
+    if (spHum != latestHum) tpwAdjust = Math.round((spHum - latestHum) * daycount)    
     
     //adjust for rain
     
     //limit to 3 minute increments
-    if (tpwAdjust <= -3) tpwAdjust = -3
-    else if (tpwAdjust >= 3) tpwAdjust = 3
-    tpwAdjust = tpwAdjust * 7
-    log.debug "moisture adjust: ${tpwAdjust} per week."
-    note("warning", "Moisture adjust: ${tpwAdjust} mins per week.", "w")
+    //if (spHum != latestHum) tpwAdjust = Math.round((spHum - latestHum) / daycount)
+    //if (tpwAdjust <= -3) tpwAdjust = -3
+    //else if (tpwAdjust >= 3) tpwAdjust = 3
+    log.debug "moisture adjust: ${tpwAdjust}"
     def moistureSum = ""
     
     if (tpwAdjust > 0 || (state.daycount[i-1] > (6 / getDPW(i)) ) ){
     	//only adjust if ok to run
     	def newTPW = Math.round(tpw + tpwAdjust)
     	if (newTPW <= 3) {
-        	newTPW = 3
-        	note("warning", "Please check ${settings["sensor${i}"]}, Zone ${i} time per week is very low: ${newTPW} mins/week","w")
-        }
+    		newTPW = 3
+    		note("warning", "Please check ${settings["sensor${i}"]}, Zone ${i} time per week is very low: ${newTPW} mins/week","w")
+    	}
     	if (newTPW >= 315) note("warning", "Please check ${settings["sensor${i}"]}, Zone ${i} time per week is very high: ${newTPW} mins/week","w")
     	state.tpwMap.putAt(i-1, newTPW)
         state.dpwMap.putAt(i-1, initDPW(i))
@@ -1236,26 +1266,68 @@ def moisture(i)
     //note("moisture", "${moistureSum}","m")
     return [0, "${moistureSum}"]
 }  
- 
+
+//set moisture from current reading
+def getMoisture(){
+	def zone = 1
+    while(zone <= 17)
+    {      
+        if(settings["sensor${zone}"] != null){
+        	state.setMoisture[zone-1] = settings["sensor${zone}"].latestValue("humidity")
+        }
+        zone++
+    }
+}
+
+//get moisture SP
+def getDrySp(i){
+    if(!state.setMoisture) state.setMoisture = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+    log.debug "Moisture SP ${state.setMoisture.get(i.toInteger()-1)}"
+    if ("${settings["sensorSp${i}"]}" != "null") return "${settings["sensorSp${i}"]}"  
+    else if (settings["plant${i}"] == "New Plants") return 40    
+    else if (state.setMoisture.get(i.toInteger()-1) != 0) return state.setMoisture.get(i.toInteger()-1)
+    else{
+        switch (settings["option${i}"]) {
+            case "Sand":
+                return 22
+            case "Clay":
+                return 38  
+            default:
+                return 28
+        }
+    }
+}
+
 //notifications to device, pushed if requested
 def note(status, message, type){
 	log.debug "${status}:  ${message}"
     switches.notify("${status}", "${message}")
     if(notify)
     {
-      if (notify.contains('Daily') && type == "d"){       
-        send "${message}"
+      if (notify.contains('Daily') && type == "d"){
+        send(message)
       }
       if (notify.contains('Weather') && type == "f"){     
-        send "${message}"
+        send(message)
       }
       if (notify.contains('Warnings') && type == "w"){     
-        send "${message}"
+        send(message)
       }
       if (notify.contains('Moisture') && type == "m"){        
-        send "${message}"
+        send(message)
       }      
     }
+}
+
+def send(msg) {
+	if (location.contactBookEnabled && recipients) {
+    	log.info ( "Sending '${msg}' to selected contacts..." )                
+		sendNotificationToContacts(msg, recipients, [event: true]) 
+    }
+    else {
+		log.info ( "Sending Push Notification '${msg}'..." )        
+		sendPush( msg )
+      }
 }
 
 //days available
@@ -1279,22 +1351,6 @@ def daysAvailable(){
     return dayCount
 }    
  
-//get moisture SP
-def getDrySp(i){
-    if ("${settings["sensorSp${i}"]}" != "null") return "${settings["sensorSp${i}"]}"  
-    else if (settings["plant${i}"] == "New Plants") return 40
-    else{
-        switch (settings["option${i}"]) {
-            case "Sand":
-                return 22
-            case "Clay":
-                return 38  
-            default:
-                return 28
-        }
-    }
-}    
-     
 //zone: ['Off', 'Spray', 'rotor', 'Drip', 'Master Valve', 'Pump']
 def nozzle(i){
     def getT = settings["zone${i}"]    
@@ -1390,7 +1446,7 @@ def setSeason() {
                 //def newTPW = Math.round(tpw * tpwAdjust / 100)
                 state.tpwMap.putAt(zone-1, tpw)
     			state.dpwMap.putAt(zone-1, initDPW(zone))
-                log.debug "Zone ${zone}: seasonaly adjusted by ${state.weekseasonAdj-100}% to ${tpw}"
+                log.debug "Zone ${zone}:  seasonaly adjusted by ${state.weekseasonAdj-100}% to ${tpw}"
                 }
     		
             zone++
@@ -1540,7 +1596,6 @@ def isWeather(){
         }
     return false    
 }
-
 def getDPWDays(dpw){
   if(dpw == 1)
      return state.DPWDays1
@@ -1796,13 +1851,3 @@ def zoneSetPage16(){
 	state.app = 16
     zoneSetPage()
     }
-    
-def send(msg) {		
-	if (location.contactBookEnabled && recipients) {		
-    	log.info ( "Sending '${msg}' to selected contacts..." )       		
-    	sendNotificationToContacts(msg, recipients, [event: true])		
-	} else {		
-    	log.info ( "Sending Push Notification '${msg}'..." ) 		
-    	sendPush( msg )		
-    } 		
-}
