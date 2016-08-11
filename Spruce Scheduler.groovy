@@ -1407,8 +1407,10 @@ def isWeather(){
     if (wdata != null) {
     	log.debug wdata.response
 		if (wdata.response.containsKey('error')) {
-    		note("warning", "Check Zipcode setting, error:\n${wdata.response.error.type}: ${wdata.response.error.description}" , "w")
-        	return false
+        	if (wdata.response.error.type != "invalidfeature") {
+    			note("warning", "Check Zipcode setting, error:\n${wdata.response.error.type}: ${wdata.response.error.description}" , "w")
+        		return false
+            } else log.debug "Rate limited...one or more WU features unavailable at this time."
 		}
     } else {
     	log.debug "wdata is null"
@@ -1416,9 +1418,9 @@ def isWeather(){
     	return false
     }
     // Forecast rain
-    if ((wdata.response.features.forecast10day.toInteger() != 1) || (wdata.forecast == null)) {
+	if (!wdata.response.features.containsKey('forecast10day') || (wdata.response.features.forecast10day.toInteger() != 1) || (wdata.forecast == null)) {
     	log.debug "Unable to get weather forecast."
-    	note("warning", "Unable to get weather forecase.", "w")
+//    	note("warning", "Unable to get weather forecast.", "w")
     	return false
     }
     def qpf = wdata.forecast.simpleforecast.forecastday.qpf_allday.mm       
@@ -1430,9 +1432,9 @@ def isWeather(){
     log.debug "qpfTomIn ${qpfTomIn}"
     
     // current conditions
-    if ((wdata.response.features.conditions.toInteger() != 1) || (wdata.current_observation == null)) {
+	if (!wdata.response.features.containsKey('conditions') || (wdata.response.features.conditions.toInteger() != 1) || (wdata.current_observation == null)) {
     	log.debug "Unable to get current weather conditions."
-    	note("warning", "Unable to get current weather conditions.", "w")
+//    	note("warning", "Unable to get current weather conditions.", "w")
     	return false
     }
     def TRain = 0
@@ -1441,11 +1443,11 @@ def isWeather(){
     
     // reported rain
     def YRain = "0.00"
-    if ((wdata.response.features.yesterday.toInteger() == 1) && (wdata.history != null)) {
+	if (wdata.response.features.containsKey('yesterday') && (wdata.response.features.yesterday.toInteger() == 1) && (wdata.history != null)) {
 		 if (wdata.history.dailysummary.precipi.get(0).isNumber()) YRain = wdata.history.dailysummary.precipi.get(0) else YRain = "0.0"   
     } else {
     	log.debug "Unable to get rainfall for yesterday."
-    	note("warning", "Unable to get rainfall for yesterday.", "w")
+//    	note("warning", "Unable to get rainfall for yesterday.", "w")
     }
     if (TRain > qpfTodayIn) qpfTodayIn = TRain    
     log.debug "TRain ${TRain} qpfTodayIn ${qpfTodayIn}, YRain ${YRain}"
@@ -1472,7 +1474,7 @@ def isWeather(){
     
     // build report
     def city = wzipcode
-    if ((wdata.response.features.geolookup.toInteger() == 1) && (wdata.location != null)) {
+	if (wdata.response.features.containsKey('geolookup') && (wdata.response.features.geolookup.toInteger() == 1) && (wdata.location != null)) {
     	city = wdata.location.city
     }
     def weatherString = "${city} weather\n Today: ${getHigh.get(0)}F,  ${qpfTodayIn}in rain\n Tomorrow: ${getHigh.get(1)}F,  ${qpfTomIn}in rain\n Yesterday:  ${YRain}in rain "
@@ -1491,7 +1493,7 @@ def isWeather(){
             //def humWeek = Math.round((gethum.get(0).toInteger() + gethum.get(1).toInteger() + gethum.get(2).toInteger() + gethum.get(3).toInteger() + gethum.get(4).toInteger())/5)    
 
             //get daylight
-            if ((wdata.response.features.astronomy.toInteger() == 1) && (wdata.moon_phase != null)) {
+ 			if (wdata.response.features.containsKey('astronomy') && (wdata.response.features.astronomy.toInteger() == 1) && (wdata.moon_phase != null)) {
             	def getsunRH = wdata.moon_phase.sunrise.hour
         		def getsunRM = wdata.moon_phase.sunrise.minute
             	def getsunSH = wdata.moon_phase.sunset.hour
@@ -1509,7 +1511,7 @@ def isWeather(){
             	setSeason()
             } else {
             	log.debug "Unable to get sunrise/set for today."
-            	note("warning", "Unable to get sunrise/set for today.", "w")
+//            	note("warning", "Unable to get sunrise/set for today.", "w")
             }
         }
     }
