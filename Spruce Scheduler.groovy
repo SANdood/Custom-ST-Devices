@@ -789,6 +789,10 @@ def installSchedule(){
     if (switches && startTime && enable){    	
         def checktime = timeToday(startTime, location.timeZone).getTime() + randomOffset
     	schedule(checktime, preCheck)	//check weather & Days
+		Random rand = new Random()
+    	def randomSeconds = rand.nextInt(59)
+    	schedule("${randomSeconds} 57 23 1/1 * ? *", getRainToday)		// capture today's rainfall just before midnight
+//        runIn( 30, getRainToday )
         writeSettings()
         note("schedule", "${app.label} schedule set to start at ${startTimeString()}", "w")
     }
@@ -1457,13 +1461,38 @@ def setSeason() {
           }       
 }
 
+//capture today's rainfall - scheduled for just before midnight each day
+def getRainToday() {
+	def wzipcode = "${zipString()}"   
+    Map wdata = getWeatherFeature('conditions', wzipcode)
+    if (wdata == null) {
+    	log.debug "getRainTotal ${zipString()} error: wdata is null"
+    	note("warning", "Check Zipcode setting, error: null" , "w")
+    } else {
+    	log.debug wdata.response
+		if (wdata.response.containsKey('error')) {
+   			note("warning", "Check Zipcode setting, error:\n${wdata.response.error.type}: ${wdata.response.error.description}" , "w")
+		} else {
+			float TRain = 0.00
+			if (wdata.current_observation.precip_today_in.isNumber()) {
+            	TRain = wdata.current_observation.precip_today_in.toFloat()
+				log.debug "getRainToday: ${wdata.current_observation.precip_today_in} / ${TRain}"
+            }
+    		def day = getWeekDay()						// what day is it today?
+            if (day == 7) day = 0						// adjust: state.Rain order is Su,Mo,Tu,We,Th,Fr,Sa
+    		state.Rain.putAt(day, TRain as Float)		// store today's total rainfall
+		}
+    }
+}
+
 //check weather
 def isWeather(){
     def wzipcode = "${zipString()}"   
    	log.debug "weather ${zipString()}"   
     //seasonal q factor
     def qFact = 0.7
-    Map wdata = getWeatherFeature("forecast10day/conditions/geolookup/yesterday/astronomy", wzipcode)
+//    Map wdata = getWeatherFeature('forecast10day/conditions/geolookup/yesterday/astronomy', wzipcode)
+    Map wdata = getWeatherFeature('forecast10day/conditions/geolookup/astronomy', wzipcode)
     if (wdata != null) {
     	log.debug wdata.response
 		if (wdata.response.containsKey('error')) {
@@ -1497,31 +1526,29 @@ def isWeather(){
 //    	note("warning", "Unable to get current weather conditions.", "w")
     	return false
     }
-    def TRain = 0
-    if (wdata.current_observation.precip_today_metric.isNumber()) TRain = Math.round(wdata.current_observation.precip_today_metric.toInteger() /25.4 * 100) /100
-    log.debug "TRain ${TRain}"
-    
-    // reported rain
-    def YRain = "0.00"
-	if (wdata.response.features.containsKey('yesterday') && (wdata.response.features.yesterday.toInteger() == 1) && (wdata.history != null)) {
-		 if (wdata.history.dailysummary.precipi.get(0).isNumber()) YRain = wdata.history.dailysummary.precipi.get(0) else YRain = "0.0"   
-    } else {
-    	log.debug "Unable to get rainfall for yesterday."
-//    	note("warning", "Unable to get rainfall for yesterday.", "w")
+
+	float TRain = 0.00
+	if (wdata.current_observation.precip_today_in.isNumber()) {
+       	TRain = wdata.current_observation.precip_today_in.toFloat()
+//		log.debug "getRainToday: ${wdata.current_observation.precip_today_in} / ${TRain}"
     }
+
+    // reported rain
+    def day = getWeekDay()
+    def YRain = state.Rain.getAt(day - 1)
+
     if (TRain > qpfTodayIn) qpfTodayIn = TRain    
     log.debug "TRain ${TRain} qpfTodayIn ${qpfTodayIn}, YRain ${YRain}"
     //state.Rain = [S,M,T,W,T,F,S]
     //state.Rain = [0,0.43,3,0,0,0,0]
-    def day = getWeekDay()
-    state.Rain.putAt(day - 1, YRain)    
+    
     def i = 0
     def weeklyRain = 0
     while (i <= 6){
     	def factor = 0
         if ((day - i) > 0) factor = day - i
         else factor =  day + 7 - i
-        def getrain = state.Rain.get(i)
+        def getrain = state.Rain.getAt(i)
     	weeklyRain += Math.round(getrain.toFloat() / factor * 100)/100
     	i++
     }
