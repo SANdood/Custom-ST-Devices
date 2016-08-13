@@ -904,7 +904,7 @@ def preCheck(){
             switches.programOff()
             state.run = false     
             note("skipping", "${app.label} not scheduled for today.", "d")
-            }
+        }
 	}    
 }
 
@@ -959,7 +959,9 @@ def checkRunMap(){
     
     //get & set watering times for today
     def runNowMap = []
-    runNowMap = cycleLoop(1)        
+    log.debug "runNowMap: ${runNowMap}"
+    runNowMap = cycleLoop(1)
+    log.debug "runNowMap: ${runNowMap}"
     if (runNowMap)
     { 
         state.run = true            
@@ -1233,7 +1235,9 @@ def moisture(i)
     def daycount = 1
     if (state.daycount[i-1] > 0) daycount = state.daycount[i-1]    
     def tpwAdjust = 0
-    if (spHum != latestHum) tpwAdjust = Math.round((spHum - latestHum) * daycount)    
+    def diffHum = spHum - latestHum
+    //if (spHum != latestHum) tpwAdjust = Math.round((spHum - latestHum) * daycount)    
+	if (diffHum != 0) tpwAdjust = diffHum > 0? Math.round(diffHum * 7) : Math.round(diffHum * 3.5) // fast rise, slow decay
     
     //adjust for rain
     
@@ -1321,11 +1325,11 @@ def note(status, message, type){
 
 def send(msg) {
 	if (location.contactBookEnabled && recipients) {
-    	log.info ( "Sending '${msg}' to selected contacts..." )                
+//    	log.info ( "Sending '${msg}' to selected contacts..." )                
 		sendNotificationToContacts(msg, recipients, [event: true]) 
     }
     else {
-		log.info ( "Sending Push Notification '${msg}'..." )        
+//		log.info ( "Sending Push Notification '${msg}'..." )        
 		sendPush( msg )
       }
 }
