@@ -1239,10 +1239,15 @@ def moisture(i)
     def daycount = 1
     if (state.daycount[i-1] > 0) daycount = state.daycount[i-1]    
     def tpwAdjust = 0
-    def diffHum = spHum - latestHum
+    float diffHum = (spHum.toFloat() - latestHum.toFloat()) / 100.0
     //if (spHum != latestHum) tpwAdjust = Math.round((spHum - latestHum) * daycount)    
-	if (diffHum != 0) tpwAdjust = diffHum > 0? Math.round(diffHum * 7) : Math.round(diffHum * 3.5) // fast rise, slow decay
-    
+	//if (diffHum != 0) tpwAdjust = diffHum > 0? Math.round(diffHum * 7) : Math.round(diffHum * 3.5) // fast rise, slow decay
+	
+	// Fast rise, slow decay, as a function of the current tpw
+    if (diffHum != 0.0) {
+    	tpwAdjust = diffHum > 0.0? Math.round(tpw.toFloat() * (diffHum * 2.0)) : Math.round(tpw.toFloat() * diffHum)
+    	if (tpwAdjust.abs() < getDPW(i)) tpwAdjust = diffHum > 0.0? getDPW(i) : 0 - getDPW(i) // at least 1 minute per day
+    }
     //adjust for rain
     
     //limit to 3 minute increments
@@ -1461,7 +1466,7 @@ def setSeason() {
           }       
 }
 
-//capture today's rainfall - scheduled for just before midnight each day
+//capture today's total rainfall - scheduled for just before midnight each day
 def getRainToday() {
 	def wzipcode = "${zipString()}"   
     Map wdata = getWeatherFeature('conditions', wzipcode)
@@ -1473,7 +1478,7 @@ def getRainToday() {
 		if (wdata.response.containsKey('error')) {
    			note("warning", "Check Zipcode setting, error:\n${wdata.response.error.type}: ${wdata.response.error.description}" , "w")
 		} else {
-			float TRain = 0.00
+			float TRain = 0.0
 			if (wdata.current_observation.precip_today_in.isNumber()) {
             	TRain = wdata.current_observation.precip_today_in.toFloat()
 				log.debug "getRainToday: ${wdata.current_observation.precip_today_in} / ${TRain}"
@@ -1512,12 +1517,12 @@ def isWeather(){
 //    	note("warning", "Unable to get weather forecast.", "w")
     	return false
     }
-    def qpf = wdata.forecast.simpleforecast.forecastday.qpf_allday.mm       
-    def qpfTodayIn = 0
-    if (qpf.get(0).isNumber()) qpfTodayIn = Math.round(qpf.get(0).toInteger() /25.4 * 100) /100
+    def qpf = wdata.forecast.simpleforecast.forecastday.qpf_allday.in	// was .mm      
+    float qpfTodayIn = 0.0
+    if (qpf.get(0).isNumber()) qpfTodayIn = qpf.get(0).toFloat() 		// Math.round(qpf.get(0).toInteger() /25.4 * 100) /100
     log.debug "qpfTodayIn ${qpfTodayIn}"
-    def qpfTomIn = 0
-    if (qpf.get(1).isNumber()) qpfTomIn = Math.round(qpf.get(1).toInteger() /25.4 * 100) /100
+    float qpfTomIn = 0.0
+    if (qpf.get(1).isNumber()) qpfTomIn = qpf.get(1).toFloat() 			// Math.round(qpf.get(1).toInteger() /25.4 * 100) /100
     log.debug "qpfTomIn ${qpfTomIn}"
     
     // current conditions
@@ -1527,7 +1532,7 @@ def isWeather(){
     	return false
     }
 
-	float TRain = 0.00
+	float TRain = 0.0
 	if (wdata.current_observation.precip_today_in.isNumber()) {
        	TRain = wdata.current_observation.precip_today_in.toFloat()
 //		log.debug "getRainToday: ${wdata.current_observation.precip_today_in} / ${TRain}"
@@ -1535,23 +1540,24 @@ def isWeather(){
 
     // reported rain
     def day = getWeekDay()
-    def YRain = state.Rain.getAt(day - 1)
+    float YRain = state.Rain.get(day - 1).toFloat()		
 
-    if (TRain > qpfTodayIn) qpfTodayIn = TRain    
+    if (TRain > qpfTodayIn) qpfTodayIn = TRain	// already have more rain than forecast    
     log.debug "TRain ${TRain} qpfTodayIn ${qpfTodayIn}, YRain ${YRain}"
     //state.Rain = [S,M,T,W,T,F,S]
     //state.Rain = [0,0.43,3,0,0,0,0]
     
     def i = 0
-    def weeklyRain = 0
+    float weeklyRain = 0
     while (i <= 6){
     	def factor = 0
         if ((day - i) > 0) factor = day - i
         else factor =  day + 7 - i
-        def getrain = state.Rain.getAt(i)
-    	weeklyRain += Math.round(getrain.toFloat() / factor * 100)/100
+        def getrain = state.Rain.get(i)
+    	weeklyRain += getrain.toFloat() / factor
     	i++
     }
+    weeklyRain = Math.round(weeklyRain)
     log.debug "weeklyRain ${weeklyRain}"
     //note("season", "weeklyRain ${weeklyRain} ${state.Rain}", "d")
            
