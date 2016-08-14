@@ -884,10 +884,13 @@ def busy(){
     	return true
         }
     else if (switches.currentValue('switch').contains('off') && !switches.currentValue('status').contains('active') && !switches.currentValue('status').contains('season') && !switches.currentValue('status').contains('pause') && !switches.currentValue('status').contains('moisture')) return false
-    else {
+    else if (runTodayCheck == 1 ){
     	subscribe switches, "switch.off", busyOff      
     	note("active", "Another schedule running, waiting to start ${app.label}", "d")
         return true
+    } else {
+    	log.debug "Another schedule running, but ${app.label} is not scheduled for today anyway."
+    	return true
     }
 }
 
@@ -905,11 +908,16 @@ def preCheck(){
         state.run = true
         if (isWeather() == false) checkRunMap()
         else {
-            switches.programOff()
+            switches.programOff() // not sure why this
             state.run = false     
             note("skipping", "${app.label} not scheduled for today.", "d")
         }
-	}    
+	} else {
+		if (runTodayCheck() == 0) {
+			state.daycount = adddays()
+			log.debug "Skipping: ${app.label} not scheduled for today."
+		}
+	}  
 }
 
 //start water program
@@ -982,6 +990,28 @@ def checkRunMap(){
     }
      
 }
+
+def runTodayCheck() {
+	def runToday = 0
+	if( settings["zone${zone}"] != null && settings["zone${zone}"] != 'Off' && nozzle(zone) != 4 && zoneActive(zone.toString()) )
+    {
+    	// First check if we run this zone today, use either dpwMap or even/odd date
+    	def dpw = getDPW(zone)          
+      	if (days && (days.contains('Even') || days.contains('Odd'))) {
+            def daynum = new Date().format("dd", location.timeZone)
+            int dayint = Integer.parseInt(daynum)
+            if(days.contains('Odd') && (dayint +1) % Math.round(31 / (dpw * 4)) == 0) runToday = 1
+          	if(days.contains('Even') && dayint % Math.round(31 / (dpw * 4)) == 0) runToday = 1
+        } else {
+            def weekDay = getWeekDay()-1
+            def dpwMap = getDPWDays(dpw)
+            def today = dpwMap[weekDay]
+            log.debug "Zone: ${zone} dpw: ${dpw} weekDay: ${weekDay} dpwMap: ${dpwMap} today: ${today}"
+            runToday = dpwMap[weekDay]	//1 or 0
+        }
+    }
+    return runToday
+}
  
 //get todays schedule
 def cycleLoop(i)
@@ -1002,8 +1032,8 @@ def cycleLoop(i)
         {
 		  // First check if we run this zone today, use either dpwMap or even/odd date
 		  def dpw = getDPW(zone)          
-          def runToday = 0
-          if (days && (days.contains('Even') || days.contains('Odd'))) {
+          def runToday = runTodayCheck()
+/*          if (days && (days.contains('Even') || days.contains('Odd'))) {
             def daynum = new Date().format("dd", location.timeZone)
             int dayint = Integer.parseInt(daynum)
             if(days.contains('Odd') && (dayint +1) % Math.round(31 / (dpw * 4)) == 0) runToday = 1
@@ -1015,7 +1045,7 @@ def cycleLoop(i)
             log.debug "Zone: ${zone} dpw: ${dpw} weekDay: ${weekDay} dpwMap: ${dpwMap} today: ${today}"
             runToday = dpwMap[weekDay]	//1 or 0
           }         
-          //if no learn check moisture sensors on available days
+*/          //if no learn check moisture sensors on available days
           //if (!learn && (settings["sensor${zone}"] != null) ) runToday = 1
           if (settings["sensor${zone}"] != null) runToday = 1
           
