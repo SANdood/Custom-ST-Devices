@@ -884,11 +884,11 @@ def busy(){
     	return true
         }
     else if (switches.currentValue('switch').contains('off') && !switches.currentValue('status').contains('active') && !switches.currentValue('status').contains('season') && !switches.currentValue('status').contains('pause') && !switches.currentValue('status').contains('moisture')) return false
-    else if (runTodayCheck == 1 ){
+    else if (isDay()) {				// Are we supposed to run today?		
     	subscribe switches, "switch.off", busyOff      
     	note("active", "Another schedule running, waiting to start ${app.label}", "d")
         return true
-    } else {
+    } else {						// Don't need to do busyOff if not scheduled for today (but I don't think this will ever happen)
     	log.debug "Another schedule running, but ${app.label} is not scheduled for today anyway."
     	return true
     }
@@ -902,21 +902,21 @@ def busyOff(evt){
 
 //run check every day
 def preCheck(){
-	if (!busy()){
+	if (isDay() == false) {
+		state.daycount = adddays()
+		log.debug "Skipping: ${app.label} is not scheduled for today."		// Silent - no note
+		return
+	}
+	if (!busy()) {
         note("active", "${app.label} starting pre-check.", "d")
         state.daycount = adddays()
-        state.run = true
-        if (isWeather() == false) checkRunMap()
-        else {
-            switches.programOff() // not sure why this
-            state.run = false     
-            note("skipping", "${app.label} not scheduled for today.", "d")
-        }
-	} else {
-		if (runTodayCheck() == 0) {
-			state.daycount = adddays()
-			log.debug "Skipping: ${app.label} not scheduled for today."
-		}
+	   	state.run = true
+       	if (isWeather() == false) checkRunMap()
+       	else {
+           	switches.programOff()
+           	state.run = false     
+//          note("skipping", "${app.label} not scheduled for today.", "d") // not running due to rain, note already sent
+       	}
 	}  
 }
 
@@ -991,28 +991,6 @@ def checkRunMap(){
      
 }
 
-def runTodayCheck() {
-	def runToday = 0
-	if( settings["zone${zone}"] != null && settings["zone${zone}"] != 'Off' && nozzle(zone) != 4 && zoneActive(zone.toString()) )
-    {
-    	// First check if we run this zone today, use either dpwMap or even/odd date
-    	def dpw = getDPW(zone)          
-      	if (days && (days.contains('Even') || days.contains('Odd'))) {
-            def daynum = new Date().format("dd", location.timeZone)
-            int dayint = Integer.parseInt(daynum)
-            if(days.contains('Odd') && (dayint +1) % Math.round(31 / (dpw * 4)) == 0) runToday = 1
-          	if(days.contains('Even') && dayint % Math.round(31 / (dpw * 4)) == 0) runToday = 1
-        } else {
-            def weekDay = getWeekDay()-1
-            def dpwMap = getDPWDays(dpw)
-            def today = dpwMap[weekDay]
-            log.debug "Zone: ${zone} dpw: ${dpw} weekDay: ${weekDay} dpwMap: ${dpwMap} today: ${today}"
-            runToday = dpwMap[weekDay]	//1 or 0
-        }
-    }
-    return runToday
-}
- 
 //get todays schedule
 def cycleLoop(i)
 {
@@ -1032,8 +1010,8 @@ def cycleLoop(i)
         {
 		  // First check if we run this zone today, use either dpwMap or even/odd date
 		  def dpw = getDPW(zone)          
-          def runToday = runTodayCheck()
-/*          if (days && (days.contains('Even') || days.contains('Odd'))) {
+          def runToday = 0
+          if (days && (days.contains('Even') || days.contains('Odd'))) {
             def daynum = new Date().format("dd", location.timeZone)
             int dayint = Integer.parseInt(daynum)
             if(days.contains('Odd') && (dayint +1) % Math.round(31 / (dpw * 4)) == 0) runToday = 1
@@ -1045,7 +1023,7 @@ def cycleLoop(i)
             log.debug "Zone: ${zone} dpw: ${dpw} weekDay: ${weekDay} dpwMap: ${dpwMap} today: ${today}"
             runToday = dpwMap[weekDay]	//1 or 0
           }         
-*/          //if no learn check moisture sensors on available days
+          //if no learn check moisture sensors on available days
           //if (!learn && (settings["sensor${zone}"] != null) ) runToday = 1
           if (settings["sensor${zone}"] != null) runToday = 1
           
@@ -1489,7 +1467,7 @@ def setSeason() {
                 //def newTPW = Math.round(tpw * tpwAdjust / 100)
                 state.tpwMap.putAt(zone-1, tpw)
     			state.dpwMap.putAt(zone-1, initDPW(zone))
-                log.debug "Zone ${zone}:  seasonaly adjusted by ${state.weekseasonAdj-100}% to ${tpw}"
+                log.debug "Zone ${zone}:  seasonally adjusted by ${state.weekseasonAdj-100}% to ${tpw}"
                 }
     		
             zone++
@@ -1640,9 +1618,14 @@ def isWeather(){
     }
        
     note("season", weatherString , "f")
-    //move day check here to allow weathercheck every day
-    if (isDay() == false) return true
-    
+
+/*	//move day check here to allow weathercheck every day
+	// isWeather no longer called if !isDay() - total rainfall is now collected just before midnight
+    if (isDay() == false) {
+  		note("skipping", "${app.label} not scheduled for today.", "d")
+    	return true
+    }
+*/    
     def setrainDelay = "0.2"
     if (rainDelay) setrainDelay = rainDelay    
     if (switches.latestValue("rainsensor") == "rainsensoron"){
