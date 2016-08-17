@@ -151,7 +151,7 @@ def globalPage() {
         section("Push Notifications") {
                 input (name: "notify", type: "enum", title: "Select what push notifications to receive.", required: false, multiple: true,
                 metadata: [values: ['Warnings', 'Daily', 'Weekly', 'Weather', 'Moisture']])
-                input("recipients", "contact", title: "Send push notifications to", required: false)
+                input("recipients", "contact", title: "Send push notifications to", required: false, multiple: true)
         } 
          
     }
