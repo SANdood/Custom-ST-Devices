@@ -1206,7 +1206,7 @@ def calcRunTime(tpw, dpw)
 {           
     def duration = 0
     if(tpw > 0 && dpw > 0) {
-        duration = Math.round(tpw / dpw)
+        duration = Math.round(tpw.toFloat() / dpw.toFloat())
     }
     return duration
 }
@@ -1252,7 +1252,9 @@ def moisture(i)
     }
 
     //learn mode
-    def tpw = getTPW(i)    
+    def tpw = getTPW(i)
+    def dpw = getDPW(i)
+    def cpd = cycles(i)
     
     //change to daycount    
     def daycount = 1
@@ -1264,8 +1266,11 @@ def moisture(i)
 	
 	// Fast rise, slow decay, as a function of the current tpw
     if (diffHum != 0.0) {
-    	tpwAdjust = diffHum > 0.0? Math.round(tpw.toFloat() * (diffHum * 2.0)) : Math.round(tpw.toFloat() * diffHum)
-    	if (tpwAdjust.abs() < getDPW(i)) tpwAdjust = diffHum > 0.0? getDPW(i) : 0 - getDPW(i) // at least 1 minute per day
+    	
+  //  	tpwAdjust = diffHum > 0.0? Math.round(tpw.toFloat() * (diffHum * 2.0)) : Math.round(tpw.toFloat() * (diffHum * 2.0))
+  		tpwAdjust = Math.round((tpw.toFloat() * diffHum) * dpw.toFloat() * cpd.toFloat())
+  		
+//    	if (tpwAdjust.abs() < getDPW(i)) tpwAdjust = diffHum > 0.0? getDPW(i) : 0 - getDPW(i) // at least 1 minute per day
     }
 
     //adjust for rain
@@ -1280,8 +1285,8 @@ def moisture(i)
     if (tpwAdjust > 0 || (daycount > (6 / getDPW(i)) ) ){
     	//only adjust if ok to run
     	def newTPW = Math.round(tpw + tpwAdjust)
-    	if (newTPW <= 3) {
-    		newTPW = 3
+    	if (newTPW <= dpw * cpd {
+    		newTPW = dpw * cpd 	// minimum 1 minute per cycle per day
     		note("warning", "Please check ${settings["sensor${i}"]}, Zone ${i} time per week is very low: ${newTPW} mins/week","w")
     	}
         
