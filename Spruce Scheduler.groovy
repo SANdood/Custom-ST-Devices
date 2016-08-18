@@ -903,13 +903,13 @@ def busyOff(evt){
 //run check every day
 def preCheck(){
 	if (isDay() == false) {
-		state.daycount = adddays()
+		adddays()
 		log.debug "Skipping: ${app.label} is not scheduled for today."		// Silent - no note
 		return
 	}
 	if (!busy()) {
         note("active", "${app.label} starting pre-check.", "d")
-        state.daycount = adddays()
+		adddays()
 	   	state.run = true
        	if (isWeather() == false) checkRunMap()
        	else {
@@ -1124,7 +1124,6 @@ def adddays(){
     	state.daycount[i] = state.daycount[i] + 1        
         i++
     }    
-	return state.daycount
 }
 
 //Initialize Days per week, based on TPW, perDay and daysAvailable settings
@@ -1265,7 +1264,7 @@ def moisture(i)
     log.debug "moisture adjust: ${tpwAdjust}"
     def moistureSum = ""
     
-    if (tpwAdjust > 0 || (state.daycount[i-1] > (6 / getDPW(i)) ) ){
+    if (tpwAdjust > 0 || (daycount > (6 / getDPW(i)) ) ){
     	//only adjust if ok to run
     	def newTPW = Math.round(tpw + tpwAdjust)
     	if (newTPW <= 3) {
@@ -1275,7 +1274,7 @@ def moisture(i)
     	if (newTPW >= 315) note("warning", "Please check ${settings["sensor${i}"]}, Zone ${i} time per week is very high: ${newTPW} mins/week","w")
     	state.tpwMap.putAt(i-1, newTPW)
         state.dpwMap.putAt(i-1, initDPW(i))
-    	if (state.daycount[i-1] > (6 / getDPW(i)) ) moistureSum = "Water Zone ${i}: ${state.daycount[i-1]} days since last water, ${settings["sensor${i}"]} moisture is: ${latestHum}%, setting is ${spHum}%\n"
+    	if (daycount > (6 / getDPW(i)) ) moistureSum = "Water Zone ${i}: ${daycount} days since last water, ${settings["sensor${i}"]} moisture is: ${latestHum}%, setting is ${spHum}%\n"
         else moistureSum = "Water Zone ${i}: ${settings["sensor${i}"]} moisture is: ${latestHum}%, setting is ${spHum}% time adjusted by ${tpwAdjust} mins to ${newTPW} mins/week\n"
     	return [1, "${moistureSum}"]
     }    
@@ -1343,7 +1342,8 @@ def note(status, message, type){
 def send(msg) {
 	if (location.contactBookEnabled && recipients) {
 //    	log.info ( "Sending '${msg}' to selected contacts..." )                
-		sendNotificationToContacts(msg, recipients, [event: true]) 
+		sendNotificationToContacts(msg, recipients, [event: true])
+        
     }
     else {
 //		log.info ( "Sending Push Notification '${msg}'..." )        
