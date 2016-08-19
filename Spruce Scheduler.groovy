@@ -205,7 +205,7 @@ def contactSensorString(){
 
 def isRainString(){
 	if(isRain) return "${rainDelay}"
-    return 'Off'
+    return "Off"
 }    
     
 def seasonalAdjString(){
@@ -820,7 +820,7 @@ def installSchedule(){
 def writeSettings(){    
     if(!state.tpwMap) state.tpwMap = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
     if(!state.dpwMap) state.dpwMap = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
-    if(!state.setMoisture) state.setMoisture = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+//    if(!state.setMoisture) state.setMoisture = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
     if(!state.seasonAdj) state.seasonAdj = 0
     if(!state.weekseasonAdj) state.weekseasonAdj = 0    
     setSeason()	    
@@ -1143,7 +1143,7 @@ def initDPW(i){
     	def dpw
         def perDay = 20
         if(settings["perDay${i}"]) perDay = settings["perDay${i}"].toInteger()
-    	dpw = Math.round((initTPW(i) / perDay)
+    	dpw = Math.round(initTPW(i) / perDay)
     	if(dpw <= 1) return 1
 		// 3 days per week not allowed for even or odd day selection
 	    if(dpw == 3 && days && (days.contains('Even') || days.contains('Odd')) && !(days.contains('Even') && days.contains('Odd')))
@@ -1182,10 +1182,10 @@ def initTPW(i){
     // Use learned, previous tpw if it is available
 	if(state.tpwMap) tpw = state.tpwMap.get(zone-1)
 	// set user time with season adjust	
-    if(settings["minWeek${i}"] != null && settings["minWeek${i}"] != 0) tpw = Math.round(("${settings["minWeek${i}"]}").toInteger() * seasonAdjust / 100)
+    if(settings["minWeek${i}"] != null && settings["minWeek${i}"] != 0) tpw = Math.round((("${settings["minWeek${i}"]}").toInteger().toFloat() * (seasonAdjust.toFloat() / 100.0))+0.5)
     
 	// initial tpw calculation
-    if (tpw == null || tpw == 0 || settings["minWeek${i}"] == 0) tpw = Math.round(plant(i) * nozzle(i) * gainAdjust / 100 * seasonAdjust / 100)
+    if (tpw == null || tpw == 0 || settings["minWeek${i}"] == 0) tpw = Math.round(((plant(i) * nozzle(i)) * (gainAdjust.toFloat() / 100.0) * (seasonAdjust.toFloat() / 100.0)) +0.5)
     // apply gain to all zones --obsolete with learn implementation--
     //else if (gainAdjust != 100) twp = Math.round(tpw * gainAdjust / 100)
     
@@ -1232,14 +1232,14 @@ def moisture(i)
     def latestHum = settings["sensor${i}"].latestValue("humidity")
     
     //set moisture sp after no watering for 2 days and no rain the previous day
-    if (state.setMoisture.get(i.toInteger()-1) == 0 && state.daycount.get(i.toInteger()-1) >= 2 && state.Rain.get(getWeekDay()-1) == 0.0){
-    	state.setMoisture.putAt(i.toInteger()-1, latestHum)
-    	log.debug "zone ${i} moisture sp set to ${latestHum}%"
- //       note("moisture", "Zone ${i} current moisture is ${latestHum}%","m")
-        }
+//    if (state.setMoisture.get(i.toInteger()-1) == 0 && state.daycount.get(i.toInteger()-1) >= 2 && state.Rain.get(getWeekDay()-1) == 0.0){
+//    	state.setMoisture.putAt(i.toInteger()-1, latestHum)
+//    	log.debug "zone ${i} moisture set to ${latestHum}%"
+//       note("moisture", "Zone ${i} current moisture is ${latestHum}%","m")
+//        }
     
     def spHum = getDrySp(i).toInteger()
-    if (!learn || state.setMoisture.get(i.toInteger()-1) == 0)
+    if (!learn)
     {
         // no learn mode, only looks at target moisture level
 		if(latestHum <= spHum) {
@@ -1255,6 +1255,7 @@ def moisture(i)
     def tpw = getTPW(i)
     def dpw = getDPW(i)
     def cpd = cycles(i)
+    log.debug "moisture(${i} tpw: ${tpw}, dpw: ${dpw}, cycles: ${cycles}"
     
     //change to daycount    
     def daycount = 1
@@ -1271,7 +1272,7 @@ def moisture(i)
  // If we need to increase the amount of water per week, or we haven't watered in a few days...
     if ((tpwAdjust > 0) || (daycount > (6 / dpw))) {	// NOTE: this is the ONLY case that we actually reduce tpw (if we have skipped a day, basically)
     	def newTPW = Math.round(tpw + tpwAdjust)
-    	if (newTPW <= (dpw * cpd)) {	// minimum 1 minute per cycle per day
+    	if (newTPW <= (dpw * cpd)) {					// minimum 1 minute per cycle per day
     		newTPW = dpw * cpd 	
     		note("warning", "Please check ${settings["sensor${i}"]}, Zone ${i} time per week is very low: ${newTPW} mins/week","w")
     	}      
@@ -1293,16 +1294,16 @@ def moisture(i)
         moistureSum = "${settings["name${i}"]}, Watering: ${settings["sensor${i}"]} reads ${latestHum}%, SP is ${spHum}% (no time adjustment)\n"
         return [1, moistureSum]
     }
-    return [0, moistureSum]
+    return [0, "${moistureSum}"]
 }  
 
 //get moisture SP
 def getDrySp(i){
-    if(!state.setMoisture) state.setMoisture = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
-    log.debug "Moisture SP ${state.setMoisture.get(i.toInteger()-1)}"
+//    if(!state.setMoisture) state.setMoisture = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+//    log.debug "Moisture SP ${state.setMoisture.get(i.toInteger()-1)}"
     if ("${settings["sensorSp${i}"]}" != "null") return "${settings["sensorSp${i}"]}"  
     else if (settings["plant${i}"] == "New Plants") return 40    
-    else if (state.setMoisture.get(i.toInteger()-1) != 0) return state.setMoisture.get(i.toInteger()-1)
+//    else if (state.setMoisture.get(i.toInteger()-1) != 0) return state.setMoisture.get(i.toInteger()-1)
     else{
         switch (settings["option${i}"]) {
             case "Sand":
@@ -1321,16 +1322,16 @@ def note(status, message, type){
     switches.notify("${status}", "${message}")
     if(notify)
     {
-      if (notify.contains('Daily') && type == 'd'){
+      if (notify.contains('Daily') && type == "d"){
         send(message)
       }
-      if (notify.contains('Weather') && type == 'f'){     
+      if (notify.contains('Weather') && type == "f"){     
         send(message)
       }
-      if (notify.contains('Warnings') && type == 'w'){     
+      if (notify.contains('Warnings') && type == "w"){     
         send(message)
       }
-      if (notify.contains('Moisture') && type == 'm'){        
+      if (notify.contains('Moisture') && type == "m"){        
         send(message)
       }      
     }
@@ -1460,10 +1461,10 @@ def setSeason() {
     		if ( !learn || (settings["sensor${zone}"] == null) || state.tpwMap[zone] == 0) {
             	state.tpwMap.putAt(zone-1, 0)
                 def tpw = initTPW(zone)
-                def newTPW = Math.round((tpw.toFloat() * (state.weekseasonAdj.toFloat() / 100.0)) + 0.5)
-                state.tpwMap.putAt(zone-1, newTPW)
+                //def newTPW = Math.round(tpw * tpwAdjust / 100)
+                state.tpwMap.putAt(zone-1, tpw)
     			state.dpwMap.putAt(zone-1, initDPW(zone))
-                log.debug "Zone ${zone}:  seasonally adjusted by ${state.weekseasonAdj-100}% to ${newTPW}"
+                log.debug "Zone ${zone}:  seasonaly adjusted by ${state.weekseasonAdj-100}% to ${tpw}"
             }
             zone++
       }       
@@ -1579,7 +1580,7 @@ def isWeather(){
     if (isSeason)
     {        
         //daily adjust
-        state.seasonAdj = Math.round(getHigh.get(0).toInteger()/avgHigh *100)        
+        state.seasonAdj = Math.round(getHigh.get(0).toInteger()/avgHigh * 100)        
         weatherString += "\n Adjusted ${state.seasonAdj - 100}% for Today"
         
         // Apply seasonal adjustment on Monday each week or at install
@@ -1618,22 +1619,37 @@ def isWeather(){
     if (rainDelay) setrainDelay = rainDelay.toFloat()
     
     if (!isRain) return false
-    else if (switches.latestValue("rainsensor") == "rainsensoron"){
-        note("raintoday", "is skipping watering, rain sensor is on.", "d")        
-        return true
-        }    
-    else if (qpfTodayIn > setrainDelay){              
-        note("raintoday", "is skipping watering, ${qpfTodayIn}in rain today.", "d")        
-        return true
-        }
-    else if (qpfTomIn > setrainDelay){     
-        note("raintom", "is skipping watering, ${qpfTomIn}in rain expected tomorrow.", "d")
-        return true
-        }
-    else if (weeklyRain > setrainDelay){
-        note("rainy", "is skipping watering, ${weeklyRain}in average rain over the past week.", "d")
-        return true
-        }
+    
+    if (!learn) {
+    	if (switches.latestValue("rainsensor") == "rainsensoron"){
+        	note("raintoday", "is skipping watering, rain sensor is on.", "d")        
+        	return true
+       	}
+    	if (qpfTodayIn > setrainDelay){              
+        	note("raintoday", "is skipping watering, ${qpfTodayIn}in rain today.", "d")        
+        	return true
+    	}
+    	if (qpfTomIn > setrainDelay){     
+        	note("raintom", "is skipping watering, ${qpfTomIn}in rain expected tomorrow.", "d")
+        	return true
+    	}
+	    if (weeklyRain > setrainDelay){
+    	    note("rainy", "is skipping watering, ${weeklyRain}in average rain over the past week.", "d")
+        	return true
+    	}
+    } else { // learning
+    	// Ignore rain sensor & historic rain - only skip if more than setrainDelay is expected before midnight tomorrow
+    	def expectedRain = (qpfTodayIn-TRain)
+    	if (expectedRain > setrainDelay){              
+        	note("rainy", "is skipping watering, ${expectedRain}in rain expected yet today.", "d")        
+        	return true
+    	}
+    	expectedRain = (qpfTodayIn-TRain)+qpfTomIn
+    	if (expectedRain > setrainDelay){              
+        	note("rainy", "is skipping watering, ${expectedRain}in rain expected later today+tomorrow.", "d")        
+        	return true
+    	}
+    }
     return false    
 }
 
