@@ -205,7 +205,7 @@ def contactSensorString(){
 
 def isRainString(){
 	if(isRain) return "${rainDelay}"
-    return "Off"
+    return 'Off'
 }    
     
 def seasonalAdjString(){
@@ -1059,7 +1059,7 @@ def cycleLoop(i)
                 //daily weather adjust if no sensor
                 if(isSeason && settings["sensor${zone}"] == null) rtime = Math.round(((rtime.toFloat() / cyc.toFloat()) * (state.seasonAdj.toFloat() / 100.0))+0.5)
                 // runTime is total run time devided by num cycles
-                else rtime = Math.round((rtime.toFloat() / cyc.toFloat) + 0.5) 			// round up instead of down (e.g., 23 / 2 = 12, not 11)                 
+                else rtime = Math.round((rtime.toFloat() / cyc.toFloat()) + 0.5) 			// round up instead of down (e.g., 23 / 2 = 12, not 11)                 
                 runNowMap += "${settings["name${zone}"]}: ${cyc} x ${rtime} min\n"
                 log.debug"Zone ${zone} Map: ${cyc} x ${rtime} min"
             	}
@@ -1143,7 +1143,7 @@ def initDPW(i){
     	def dpw
         def perDay = 20
         if(settings["perDay${i}"]) perDay = settings["perDay${i}"].toInteger()
-    	dpw = Math.round(initTPW(i) / perDay)
+    	dpw = Math.round((initTPW(i) / perDay)
     	if(dpw <= 1) return 1
 		// 3 days per week not allowed for even or odd day selection
 	    if(dpw == 3 && days && (days.contains('Even') || days.contains('Odd')) && !(days.contains('Even') && days.contains('Odd')))
@@ -1206,7 +1206,7 @@ def calcRunTime(tpw, dpw)
 {           
     def duration = 0
     if(tpw > 0 && dpw > 0) {
-        duration = Math.round((tpw.toFloat() / dpw.toFloat()) + 0.5)	// round up, not down (e.g., 89 / 4 = 23, not 22)
+        duration = Math.round(tpw.toFloat() / dpw.toFloat())
     }
     return duration
 }
@@ -1263,7 +1263,7 @@ def moisture(i)
     float diffHum = (spHum.toFloat() - latestHum.toFloat()) / 100.0
 		
     if ((diffHum < -0.01) || (diffHum > 0.01)) {											// don't adjust if we are within +/-1% of target
-  		tpwAdjust = Math.round((tpw.toFloat() * diffHum) * dpw.toFloat() * cpd.toFloat())	// Fast rise, slow decay, as a function of the current tpw
+  		tpwAdjust = Math.round(((tpw.toFloat() * diffHum) + 0.5) * dpw.toFloat() * cpd.toFloat())	// Fast rise, slow decay, as a function of the current tpw
     }
     log.debug "moisture adjust: ${tpwAdjust}"
     String moistureSum = ""
@@ -1293,7 +1293,7 @@ def moisture(i)
         moistureSum = "${settings["name${i}"]}, Watering: ${settings["sensor${i}"]} reads ${latestHum}%, SP is ${spHum}% (no time adjustment)\n"
         return [1, moistureSum]
     }
-    return [0, "${moistureSum}"]
+    return [0, moistureSum]
 }  
 
 //get moisture SP
@@ -1321,16 +1321,16 @@ def note(status, message, type){
     switches.notify("${status}", "${message}")
     if(notify)
     {
-      if (notify.contains('Daily') && type == "d"){
+      if (notify.contains('Daily') && type == 'd'){
         send(message)
       }
-      if (notify.contains('Weather') && type == "f"){     
+      if (notify.contains('Weather') && type == 'f'){     
         send(message)
       }
-      if (notify.contains('Warnings') && type == "w"){     
+      if (notify.contains('Warnings') && type == 'w'){     
         send(message)
       }
-      if (notify.contains('Moisture') && type == "m"){        
+      if (notify.contains('Moisture') && type == 'm'){        
         send(message)
       }      
     }
