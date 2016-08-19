@@ -1,4 +1,4 @@
-/**
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    /**
  *  Spruce Scheduler Pre-release V2.52.4 8/17/2016
  *
  *	
@@ -1057,9 +1057,9 @@ def cycleLoop(i)
                 dpw = getDPW(zone)
                 rtime = calcRunTime(getTPW(zone), dpw)                
                 //daily weather adjust if no sensor
-                if(isSeason && settings["sensor${zone}"] == null) rtime = Math.round(rtime / cyc * state.seasonAdj / 100)
+                if(isSeason && settings["sensor${zone}"] == null) rtime = Math.round(((rtime.toFloat() / cyc.toFloat()) * (state.seasonAdj.toFloat() / 100.0))+0.5)
                 // runTime is total run time devided by num cycles
-                else rtime = Math.round(rtime / cyc)                    
+                else rtime = Math.round((rtime.toFloat() / cyc.toFloat) + 0.5) 			// round up instead of down (e.g., 23 / 2 = 12, not 11)                 
                 runNowMap += "${settings["name${zone}"]}: ${cyc} x ${rtime} min\n"
                 log.debug"Zone ${zone} Map: ${cyc} x ${rtime} min"
             	}
@@ -1206,7 +1206,7 @@ def calcRunTime(tpw, dpw)
 {           
     def duration = 0
     if(tpw > 0 && dpw > 0) {
-        duration = Math.round(tpw.toFloat() / dpw.toFloat())
+        duration = Math.round((tpw.toFloat() / dpw.toFloat()) + 0.5)	// round up, not down (e.g., 89 / 4 = 23, not 22)
     }
     return duration
 }
@@ -1235,7 +1235,7 @@ def moisture(i)
     if (state.setMoisture.get(i.toInteger()-1) == 0 && state.daycount.get(i.toInteger()-1) >= 2 && state.Rain.get(getWeekDay()-1) == 0.0){
     	state.setMoisture.putAt(i.toInteger()-1, latestHum)
     	log.debug "zone ${i} moisture sp set to ${latestHum}%"
-        note("moisture", "Zone ${i} moisture set to ${latestHum}%","m")
+ //       note("moisture", "Zone ${i} current moisture is ${latestHum}%","m")
         }
     
     def spHum = getDrySp(i).toInteger()
@@ -1244,10 +1244,10 @@ def moisture(i)
         // no learn mode, only looks at target moisture level
 		if(latestHum <= spHum) {
            //dry soil
-           return [1,"${settings["name${i}"]}, Watering ${settings["sensor${i}"]} reads ${latestHum}%, SP is ${spHum}%\n"]              
+           return [1,"${settings["name${i}"]}, Watering: ${settings["sensor${i}"]} reads ${latestHum}%, SP is ${spHum}%\n"]              
         } else {
            //wet soil
-           return [0,"${settings["name${i}"]}, Skipping ${settings["sensor${i}"]} reads ${latestHum}%, SP is ${spHum}%\n"]           
+           return [0,"${settings["name${i}"]}, Skipping: ${settings["sensor${i}"]} reads ${latestHum}%, SP is ${spHum}%\n"]           
         }
     }
 
@@ -1261,49 +1261,38 @@ def moisture(i)
     if (state.daycount[i-1] > 0) daycount = state.daycount[i-1]    
     def tpwAdjust = 0
     float diffHum = (spHum.toFloat() - latestHum.toFloat()) / 100.0
-    //if (spHum != latestHum) tpwAdjust = Math.round((spHum - latestHum) * daycount)    
-	//if (diffHum != 0) tpwAdjust = diffHum > 0? Math.round(diffHum * 7) : Math.round(diffHum * 3.5) // fast rise, slow decay
-	
-	// Fast rise, slow decay, as a function of the current tpw
-    if (diffHum != 0.0) {
-    	
-  //  	tpwAdjust = diffHum > 0.0? Math.round(tpw.toFloat() * (diffHum * 2.0)) : Math.round(tpw.toFloat() * (diffHum * 2.0))
-  		tpwAdjust = Math.round((tpw.toFloat() * diffHum) * dpw.toFloat() * cpd.toFloat())
-  		
-//    	if (tpwAdjust.abs() < getDPW(i)) tpwAdjust = diffHum > 0.0? getDPW(i) : 0 - getDPW(i) // at least 1 minute per day
+		
+    if ((diffHum < -0.01) || (diffHum > 0.01)) {											// don't adjust if we are within +/-1% of target
+  		tpwAdjust = Math.round((tpw.toFloat() * diffHum) * dpw.toFloat() * cpd.toFloat())	// Fast rise, slow decay, as a function of the current tpw
     }
-
-    //adjust for rain
-    
-    //limit to 3 minute increments
-    //if (spHum != latestHum) tpwAdjust = Math.round((spHum - latestHum) / daycount)
-    //if (tpwAdjust <= -3) tpwAdjust = -3
-    //else if (tpwAdjust >= 3) tpwAdjust = 3
     log.debug "moisture adjust: ${tpwAdjust}"
-    def moistureSum = ""
-    
-    if (tpwAdjust > 0 || (daycount > (6 / getDPW(i)) ) ){
-    	//only adjust if ok to run
+    String moistureSum = ""
+ 
+ // If we need to increase the amount of water per week, or we haven't watered in a few days...
+    if ((tpwAdjust > 0) || (daycount > (6 / dpw))) {	// NOTE: this is the ONLY case that we actually reduce tpw (if we have skipped a day, basically)
     	def newTPW = Math.round(tpw + tpwAdjust)
-    	if (newTPW <= dpw * cpd {
-    		newTPW = dpw * cpd 	// minimum 1 minute per cycle per day
+    	if (newTPW <= (dpw * cpd)) {	// minimum 1 minute per cycle per day
+    		newTPW = dpw * cpd 	
     		note("warning", "Please check ${settings["sensor${i}"]}, Zone ${i} time per week is very low: ${newTPW} mins/week","w")
-    	}
-        
+    	}      
     	if (newTPW >= 315) note("warning", "Please check ${settings["sensor${i}"]}, Zone ${i} time per week is very high: ${newTPW} mins/week","w")
 
     	state.tpwMap.putAt(i-1, newTPW)
         state.dpwMap.putAt(i-1, initDPW(i))
-    	if (daycount > (6 / getDPW(i)) ) moistureSum = "Water Zone ${i}: ${daycount} days since last water, ${settings["sensor${i}"]} moisture is: ${latestHum}%, setting is ${spHum}%\n"
-        else moistureSum = "Water Zone ${i}: ${settings["sensor${i}"]} moisture is: ${latestHum}%, setting is ${spHum}% time adjusted by ${tpwAdjust} mins to ${newTPW} mins/week\n"
-    	return [1, "${moistureSum}"]
-    }    
-    else {
-    	//moistureSum = "Zone ${i}: ${settings["sensor${i}"]} moisture is: ${latestHum}%, setting is ${spHum}% no time adjustment\n"
-        moistureSum = "${settings["name${i}"]}, Skipping ${settings["sensor${i}"]} reads ${latestHum}%, SP is ${spHum}%\n"
-        return [0, "${moistureSum}"]
+    	if (daycount > (6 / dpw) ) moistureSum = "${settings["name${i}"]}, Watering: ${daycount} days since last water, ${settings["sensor${i}"]} reads ${latestHum}% SP is ${spHum}%, time adjusted by ${tpwAdjust} mins to ${newTPW} mins/week\n"
+        else moistureSum = "${settings["name${i}"]}, Watering: ${settings["sensor${i}"]} reads ${latestHum}%, SP is ${spHum}%, time adjusted by ${tpwAdjust} mins to ${newTPW} mins/week\n"
+    	return [1, moistureSum]
     }
-    //note("moisture", "${moistureSum}","m")
+    // else, if we are currently above the humidity sp
+    else if (tpwAdjust < 0) {
+        moistureSum = "${settings["name${i}"]}, Skipping: ${settings["sensor${i}"]} reads ${latestHum}%, SP is ${spHum}%\n"
+        return [0, moistureSum]
+    } 
+    // else, we are just going to water with the current settings
+    else {
+        moistureSum = "${settings["name${i}"]}, Watering: ${settings["sensor${i}"]} reads ${latestHum}%, SP is ${spHum}% (no time adjustment)\n"
+        return [1, moistureSum]
+    }
     return [0, "${moistureSum}"]
 }  
 
@@ -1471,14 +1460,13 @@ def setSeason() {
     		if ( !learn || (settings["sensor${zone}"] == null) || state.tpwMap[zone] == 0) {
             	state.tpwMap.putAt(zone-1, 0)
                 def tpw = initTPW(zone)
-                //def newTPW = Math.round(tpw * tpwAdjust / 100)
-                state.tpwMap.putAt(zone-1, tpw)
+                def newTPW = Math.round((tpw.toFloat() * (state.weekseasonAdj.toFloat() / 100.0)) + 0.5)
+                state.tpwMap.putAt(zone-1, newTPW)
     			state.dpwMap.putAt(zone-1, initDPW(zone))
-                log.debug "Zone ${zone}:  seasonally adjusted by ${state.weekseasonAdj-100}% to ${tpw}"
-                }
-    		
+                log.debug "Zone ${zone}:  seasonally adjusted by ${state.weekseasonAdj-100}% to ${newTPW}"
+            }
             zone++
-          }       
+      }       
 }
 
 //capture today's total rainfall - scheduled for just before midnight each day
@@ -1612,7 +1600,7 @@ def isWeather(){
             
             //set seasonal adjustment
             //state.weekseasonAdj = Math.round((daylight/700 * avgHigh/75) * ((1-(humWeek/100)) * avgHigh/75)*100)
-            	state.weekseasonAdj = Math.round(daylight/700 * avgHigh/70 * qFact * 100)
+            	state.weekseasonAdj = Math.round((daylight/700.0) * avgHigh/70 * qFact * 100)
 
             //apply seasonal time adjustment
             	weatherString += "\n Applying seasonal adjustment of ${state.weekseasonAdj-100}% this week"            
