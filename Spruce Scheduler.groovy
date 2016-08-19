@@ -1266,7 +1266,7 @@ def moisture(i)
     if ((diffHum < -0.01) || (diffHum > 0.01)) {											// don't adjust if we are within +/-1% of target
   		tpwAdjust = Math.round(((tpw.toFloat() * diffHum) + 0.5) * dpw.toFloat() * cpd.toFloat())	// Fast rise, slow decay, as a function of the current tpw
     }
-    log.debug "moisture adjust: ${tpwAdjust}"
+    log.debug "moisture: diffHum: ${diffHum}, tpwAdjust: ${tpwAdjust}"
     String moistureSum = ""
  
  // If we need to increase the amount of water per week, or we haven't watered in a few days...
@@ -1464,7 +1464,7 @@ def setSeason() {
                 //def newTPW = Math.round(tpw * tpwAdjust / 100)
                 state.tpwMap.putAt(zone-1, tpw)
     			state.dpwMap.putAt(zone-1, initDPW(zone))
-                log.debug "Zone ${zone}:  seasonaly adjusted by ${state.weekseasonAdj-100}% to ${tpw}"
+                log.debug "Zone ${zone}:  seasonally adjusted by ${state.weekseasonAdj-100}% to ${tpw}"
             }
             zone++
       }       
@@ -1562,7 +1562,7 @@ def isWeather(){
     	weeklyRain += getrain.toFloat() / factor
     	i++
     }
-    weeklyRain = Math.round(weeklyRain)
+//    weeklyRain = Math.round(weeklyRain)
     log.debug "weeklyRain ${weeklyRain}"
     //note("season", "weeklyRain ${weeklyRain} ${state.Rain}", "d")
            
@@ -1580,7 +1580,7 @@ def isWeather(){
     if (isSeason)
     {        
         //daily adjust
-        state.seasonAdj = Math.round(getHigh.get(0).toInteger()/avgHigh * 100)        
+        state.seasonAdj = Math.round((getHigh.get(0).toFloat()/avgHigh.toFloat()) * 100.0)        
         weatherString += "\n Adjusted ${state.seasonAdj - 100}% for Today"
         
         // Apply seasonal adjustment on Monday each week or at install
@@ -1601,7 +1601,7 @@ def isWeather(){
             
             //set seasonal adjustment
             //state.weekseasonAdj = Math.round((daylight/700 * avgHigh/75) * ((1-(humWeek/100)) * avgHigh/75)*100)
-            	state.weekseasonAdj = Math.round((daylight/700.0) * avgHigh/70 * qFact * 100)
+            	state.weekseasonAdj = Math.round((daylight/700.0) * (avgHigh/70.0) * (qFact * 100))
 
             //apply seasonal time adjustment
             	weatherString += "\n Applying seasonal adjustment of ${state.weekseasonAdj-100}% this week"            
