@@ -1226,7 +1226,7 @@ def moisture(i)
     if (eventsSinceYesterday.size() < 1){    
     	//change to seperate warning note?
         //note("warning", "Please check ${settings["sensor${i}"]}, no activity in the last 12 hours", "w")
-        return [1, "Please check ${settings["sensor${i}"]}, no activity in the last 12 hours\n"]	//change to 1
+        return [1, "Please check ${settings["sensor${i}"]}, no humidity reports in the last 48 hours\n"]	//change to 1
     }    
     
     def latestHum = settings["sensor${i}"].latestValue("humidity")
@@ -1270,7 +1270,7 @@ def moisture(i)
     String moistureSum = ""
  
  // If we need to increase the amount of water per week, or we haven't watered in a few days...
-    if ((tpwAdjust > 0) || (daycount > (6.0 / dpw.toFloat()))) {	// NOTE: this is the ONLY case that we actually reduce tpw (if we have skipped a day, basically)
+    if ((tpwAdjust > 0) || (daycount > (1.0+(6.0 / dpw.toFloat())))) {	// NOTE: this is the ONLY case that we actually reduce tpw (if we have skipped a day, basically)
     	def newTPW = Math.round(tpw + tpwAdjust)
     	if (newTPW < (dpw * cpd)) {					// minimum 1 minute per cycle per day
     		newTPW = dpw * cpd 	
@@ -1280,7 +1280,7 @@ def moisture(i)
 
     	state.tpwMap.putAt(i-1, newTPW)
         state.dpwMap.putAt(i-1, initDPW(i))
-    	if (daycount > (6.0 / dpw.toFloat()) ) moistureSum = "${settings["name${i}"]}, Watering: ${daycount} days since last water, ${settings["sensor${i}"]} reads ${latestHum}% SP is ${spHum}%, time adjusted by ${tpwAdjust} mins to ${newTPW} mins/week\n"
+    	if (daycount > (1.0+(6.0 / dpw.toFloat()))) moistureSum = "${settings["name${i}"]}, Watering: ${daycount} days since last water, ${settings["sensor${i}"]} reads ${latestHum}% SP is ${spHum}%, time adjusted by ${tpwAdjust} mins to ${newTPW} mins/week\n"
         else moistureSum = "${settings["name${i}"]}, Watering: ${settings["sensor${i}"]} reads ${latestHum}%, SP is ${spHum}%, time adjusted by ${tpwAdjust} mins to ${newTPW} mins/week\n"
     	return [1, moistureSum]
     }
