@@ -914,7 +914,7 @@ def busyOff(evt){
 
 //run check every day
 def preCheck(){	
-    if (isDay() == false) {
+    if (!isDay()) {
 		adddays()
 		log.debug "Skipping: ${app.label} is not scheduled for today."		// Silent - no note
 		return
@@ -923,7 +923,7 @@ def preCheck(){
         note("active", "${app.label} starting pre-check.", "d")
         adddays()
 	   	state.run = true
-       	if (isWeather() == false) checkRunMap()
+       	if (!isWeather()) checkRunMap()
        	else {
            	switches.programOff()
            	state.run = false            
@@ -987,9 +987,7 @@ def checkRunMap(){
     if (runNowMap)
     { 
         state.run = true            
-        def runTime = now() + 60000
-		log.debug runTime
-        schedule(runTime, cycleOn)	//start water
+        runIn(60, cycleOn)			// start water
         runNowMap = "${app.label} water will begin in 1 minute:\n" + runNowMap
         note("active", "${runNowMap}", "d")
     }
@@ -1065,7 +1063,7 @@ def cycleLoop(i)
             	}
         	}
 		}
-        else state.daycount[zone-1] = 0
+        else state.daycount[zone-1] = 0  // Zone isn't scheduled
         if (nozzle(zone) == 4) pumpMap += "${settings["name${zone}"]}: ${settings["zone${zone}"]} on\n"
         timeMap."${zone+1}" = "${rtime}"
         zone++  
@@ -1078,8 +1076,9 @@ def cycleLoop(i)
     
     //send settings to Spruce Controller
     switches.settingsMap(timeMap,4002)
-    def writeTime = now() + 30000
-	schedule(writeTime, writeCycles)    
+//    def writeTime = now() + 30000
+//	schedule(writeTime, writeCycles)   
+	runIn(30, writeCycles)
     return runNowMap += pumpMap    
 }
 
@@ -1219,29 +1218,22 @@ def moisture(i)
         return [1,""]
     }
 
-    // Check if sensor is reporting 6-> 12 hours -> 48 hours   
-    def sixHours = new Date(now() - (1000 * 60 * 60 * 48).toLong())    
-    def eventsSinceYesterday = (settings["sensor${i}"].eventsSince(sixHours, [max: 50])?.findAll { it.name == "humidity" })
-    //log.debug "there have been ${eventsSinceYesterday.size()} since yesterday"
+    // Check if sensor has reported within last 48 hours
+    def hours = 48
+    def yesterday = new Date(now() - (1000 * 60 * 60 * hours).toLong())    
+    def eventsSinceYesterday = (settings["sensor${i}"].eventsSince(yesterday, [max: 50])?.findAll { it.name == "humidity" })
+    log.debug "there have been ${eventsSinceYesterday.size()} since yesterday"
     if (eventsSinceYesterday.size() < 1){    
     	//change to seperate warning note?
-        //note("warning", "Please check ${settings["sensor${i}"]}, no activity in the last 12 hours", "w")
-        return [1, "Please check ${settings["sensor${i}"]}, no humidity reports in the last 48 hours\n"]	//change to 1
+        //note("warning", "Please check ${settings["sensor${i}"]}, no humidity reports in the last ${hours} hours", "w")
+        return [1, "Please check ${settings["sensor${i}"]}, no humidity reports in the last ${hours} hours\n"]	//change to 1
     }    
     
     def latestHum = settings["sensor${i}"].latestValue("humidity")
-    
-    //set moisture sp after no watering for 2 days and no rain the previous day
-//    if (state.setMoisture.get(i.toInteger()-1) == 0 && state.daycount.get(i.toInteger()-1) >= 2 && state.Rain.get(getWeekDay()-1) == 0.0){
-//    	state.setMoisture.putAt(i.toInteger()-1, latestHum)
-//    	log.debug "zone ${i} moisture set to ${latestHum}%"
-//       note("moisture", "Zone ${i} current moisture is ${latestHum}%","m")
-//        }
-    
     def spHum = getDrySp(i).toInteger()
     if (!learn)
     {
-        // no learn mode, only looks at target moisture level
+        // no learn mode, only looks at target moisture level, doesn't try to adjust tpw
 		if(latestHum <= spHum) {
            //dry soil
            return [1,"${settings["name${i}"]}, Watering: ${settings["sensor${i}"]} reads ${latestHum}%, SP is ${spHum}%\n"]              
@@ -1261,21 +1253,29 @@ def moisture(i)
     def daycount = 1
     if (state.daycount[i-1] > 0) daycount = state.daycount[i-1]    
     def tpwAdjust = 0
-    float diffHum = (spHum.toFloat() - latestHum.toFloat()) / 100.0
+    float diffHum 
+    if (latestHum > 0) diffHum = (spHum.toFloat() - latestHum.toFloat()) / 100.0
+    else {
+    	diffHum = 0.05 // Safety valve in case sensor is reporting 0% humidity (e.g., somebody pulled it out of the ground or flower pot)
+    	note("warning", "Please check ${settings["sensor${i}"]}, it is currently reading 0%", "w")
+    }
 		
     if ((diffHum < -0.01) || (diffHum > 0.01)) {											// don't adjust if we are within +/-1% of target
-  		tpwAdjust = Math.round(((tpw.toFloat() * diffHum) + 0.5) * dpw.toFloat() * cpd.toFloat())	// Fast rise, slow decay, as a function of the current tpw
+  		tpwAdjust = Math.round(((tpw.toFloat() * diffHum) + 0.5) * dpw.toFloat() * cpd.toFloat())	// Compute adjustment as a function of the current tpw
+  		// Another safety valve, limit adjustments to +/- 50% of current tpw
+  		if (tpwAdjust.abs() > (tpw.toFloat()*0.5)) tpwAdjust = (tpwAdjust > 0)? Math.round((tpw.toFloat()*0.5)+0.5) : Math.round((tpw.toFloat()*-0.5)-0.5)
     }
-    log.debug "moisture: diffHum: ${diffHum}, tpwAdjust: ${tpwAdjust}"
+    log.debug "moisture(): zone: ${i}, diffHum: ${diffHum}, tpwAdjust: ${tpwAdjust}"
     String moistureSum = ""
  
  // If we need to increase the amount of water per week, or we haven't watered in a few days...
-    if ((tpwAdjust > 0) || (daycount > (1.0+(6.0 / dpw.toFloat())))) {	// NOTE: this is the ONLY case that we actually reduce tpw (if we have skipped a day, basically)
+    if ((tpwAdjust > 0) || (daycount > (1.0+(6.0 / dpw.toFloat())))) {	// NOTE: this is the ONLY case that we actually reduce tpw (if we have skipped a scheduled day because we were too wet)
     	def newTPW = Math.round(tpw + tpwAdjust)
-    	if (newTPW < (dpw * cpd)) {					// minimum 1 minute per cycle per day
+    	if (newTPW < (dpw * cpd)) {					// enforce a minimum of 1 minute per cycle per day
     		newTPW = dpw * cpd 	
     		note("warning", "Please check ${settings["sensor${i}"]}, Zone ${i} time per week is very low: ${newTPW} mins/week","w")
-    	}      
+    	}
+    	// Probably should have a maximum tpw also, or perhaps a maximum per day
     	if (newTPW >= 315) note("warning", "Please check ${settings["sensor${i}"]}, Zone ${i} time per week is very high: ${newTPW} mins/week","w")
 
     	state.tpwMap.putAt(i-1, newTPW)
@@ -1294,7 +1294,7 @@ def moisture(i)
         moistureSum = "${settings["name${i}"]}, Watering: ${settings["sensor${i}"]} reads ${latestHum}%, SP is ${spHum}% (no time adjustment)\n"
         return [1, moistureSum]
     }
-    return [0, "${moistureSum}"]
+    return [0, moistureSum]
 }  
 
 //get moisture SP
@@ -1458,13 +1458,14 @@ def setSeason() {
         
         def zone = 1
         while(zone <= 16) {    		
-    		if ( !learn || (settings["sensor${zone}"] == null) || state.tpwMap[zone] == 0) {
-            	state.tpwMap.putAt(zone-1, 0)
+    		if ( !learn || (settings["sensor${zone}"] == null) || state.tpwMap[zone-1] == 0) {
+            	// state.tpwMap.putAt(zone-1, 0)
                 def tpw = initTPW(zone)
-                //def newTPW = Math.round(tpw * tpwAdjust / 100)
-                state.tpwMap.putAt(zone-1, tpw)
-    			state.dpwMap.putAt(zone-1, initDPW(zone))
-                log.debug "Zone ${zone}:  seasonally adjusted by ${state.weekseasonAdj-100}% to ${tpw}"
+                state.tpwMap[zone-1] = tpw
+    			state.dpwMap[zone-1] = initDPW(zone)
+    			if ((tpw != 0) && (state.weekseasonAdj != 0)) {
+                	log.debug "Zone ${zone}: seasonally adjusted by ${state.weekseasonAdj-100}% to ${tpw}"
+    			}
             }
             zone++
       }       
@@ -1615,12 +1616,12 @@ def isWeather(){
        
     note("season", weatherString , "f")
 
+    if (!isRain) return false
+    
     float setrainDelay = 0.2
     if (rainDelay) setrainDelay = rainDelay.toFloat()
     
-    if (!isRain) return false
-    
-    if (!learn) {
+    if (!anySensors()) { // if we have no sensors, rain causes us to skip watering for the day
     	if (switches.latestValue("rainsensor") == "rainsensoron"){
         	note("raintoday", "is skipping watering, rain sensor is on.", "d")        
         	return true
@@ -1637,7 +1638,7 @@ def isWeather(){
     	    note("rainy", "is skipping watering, ${weeklyRain}in average rain over the past week.", "d")
         	return true
     	}
-    } else { // learning
+    } else { // we have at least one sensor
     	// Ignore rain sensor & historic rain - only skip if more than setrainDelay is expected before midnight tomorrow
     	def expectedRain = (qpfTodayIn-TRain)
     	if (expectedRain > setrainDelay){              
@@ -1651,6 +1652,16 @@ def isWeather(){
     	}
     }
     return false    
+}
+
+// false if ANY of this schedule's zones are using sensors
+def anySensors() {
+	def zone=1
+	while (zone <= 16) {
+		if (settings["sensor${zone}"] != null) return true
+		zone++
+	}
+	return false
 }
 
 def getDPWDays(dpw){
