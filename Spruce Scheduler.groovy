@@ -1255,7 +1255,7 @@ def moisture(i)
     def tpw = getTPW(i)
     def dpw = getDPW(i)
     def cpd = cycles(i)
-    log.debug "moisture(${i} tpw: ${tpw}, dpw: ${dpw}, cycles: ${cycles}"
+    log.debug "moisture: zone: ${i}, tpw: ${tpw}, dpw: ${dpw}, cycles: ${cpd}"
     
     //change to daycount    
     def daycount = 1
@@ -1270,9 +1270,9 @@ def moisture(i)
     String moistureSum = ""
  
  // If we need to increase the amount of water per week, or we haven't watered in a few days...
-    if ((tpwAdjust > 0) || (daycount > (6 / dpw))) {	// NOTE: this is the ONLY case that we actually reduce tpw (if we have skipped a day, basically)
+    if ((tpwAdjust > 0) || (daycount > (6.0 / dpw.toFloat()))) {	// NOTE: this is the ONLY case that we actually reduce tpw (if we have skipped a day, basically)
     	def newTPW = Math.round(tpw + tpwAdjust)
-    	if (newTPW <= (dpw * cpd)) {					// minimum 1 minute per cycle per day
+    	if (newTPW < (dpw * cpd)) {					// minimum 1 minute per cycle per day
     		newTPW = dpw * cpd 	
     		note("warning", "Please check ${settings["sensor${i}"]}, Zone ${i} time per week is very low: ${newTPW} mins/week","w")
     	}      
@@ -1280,7 +1280,7 @@ def moisture(i)
 
     	state.tpwMap.putAt(i-1, newTPW)
         state.dpwMap.putAt(i-1, initDPW(i))
-    	if (daycount > (6 / dpw) ) moistureSum = "${settings["name${i}"]}, Watering: ${daycount} days since last water, ${settings["sensor${i}"]} reads ${latestHum}% SP is ${spHum}%, time adjusted by ${tpwAdjust} mins to ${newTPW} mins/week\n"
+    	if (daycount > (6.0 / dpw.toFloat()) ) moistureSum = "${settings["name${i}"]}, Watering: ${daycount} days since last water, ${settings["sensor${i}"]} reads ${latestHum}% SP is ${spHum}%, time adjusted by ${tpwAdjust} mins to ${newTPW} mins/week\n"
         else moistureSum = "${settings["name${i}"]}, Watering: ${settings["sensor${i}"]} reads ${latestHum}%, SP is ${spHum}%, time adjusted by ${tpwAdjust} mins to ${newTPW} mins/week\n"
     	return [1, moistureSum]
     }
