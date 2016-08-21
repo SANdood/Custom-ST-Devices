@@ -503,10 +503,8 @@ def zoneSetPage(){
                 //description: "Set watering options")
                 description: "Watering option descriptions")
             
-            input "option${state.app}", "enum", title: "Options", multiple: false, required: false, defaultValue: 'Cycle 2x', metadata: [values: ['Slope', 'Sand', 'Clay', 'No Cycle', 'Cycle 2x', 'Cycle 3x']]    
-       
-            
-            
+	            input "option${state.app}", "enum", title: "Options", multiple: false, required: false, defaultValue: 'Cycle 2x', metadata: [values: ['Slope', 'Sand', 'Clay', 'No Cycle', 'Cycle 2x', 'Cycle 3x']]    
+
             }            
         section(""){
             paragraph image: "http://www.plaidsystems.com/smartthings/st_sensor_200_r.png",
@@ -516,7 +514,7 @@ def zoneSetPage(){
                 input "sensor${state.app}", "capability.relativeHumidityMeasurement", title: "Select moisture sensor?", required: false, multiple: false
          
                 input "sensorSp${state.app}", "number", title: "Minimum moisture sensor target value, Setpoint: ${getDrySp("${state.app}")}", required: false
-        }
+        	}
         section(""){
             paragraph image: "http://www.plaidsystems.com/smartthings/st_timer.png",
                       title: "Optional: Enter total watering time per week", 
@@ -526,7 +524,6 @@ def zoneSetPage(){
                 
                 input "perDay${state.app}", "number", title: "Guideline value for time per day, this divides minutes per week into watering days. Default: 20", defaultValue: '20', required: false
         }
- 
     }
 }    
 
@@ -553,7 +550,7 @@ def plantSetPage(){
                 "Current settings ${display("${state.app}")}"
                  
             //input "plant${state.app}", "enum", title: "Landscape", multiple: false, required: false, submitOnChange: true, metadata: [values: ['Lawn', 'Garden', 'Flowers', 'Shrubs', 'Trees', 'Xeriscape', 'New Plants']]
-            }        
+        }        
         section(""){
             paragraph image: "http://www.plaidsystems.com/smartthings/st_lawn_200_r.png",             
             title: "Lawn",            
@@ -582,8 +579,8 @@ def plantSetPage(){
             paragraph image: "http://www.plaidsystems.com/smartthings/st_newplants_225_r.png",             
             title: "New Plants",            
             "Increases watering time per week and reduces automatic adjustments to help establish new plants. No weekly seasonal adjustment and moisture setpoint set to 40."
-            }
-     }
+        }
+    }
 }
  
 def sprinklerSetPage(){
@@ -615,8 +612,8 @@ def sprinklerSetPage(){
             paragraph image: "http://www.plaidsystems.com/smartthings/st_pump_225_r.png",             
             title: "Pump",            
             "Attach a pump relay to this zone and the pump will turn on before watering begins.  Set the delay between pump start and watering in delay settings."
-            }
         }
+    }
 }
  
 def optionSetPage(){
@@ -651,8 +648,8 @@ def optionSetPage(){
             paragraph image: "http://www.plaidsystems.com/smartthings/st_cycle3x_225_r.png",             
             title: "Cycle 3x",            
             "Cycle 3x will break the water period up into 3 shorter cycles to help minimize runoff and maximize adsorption"
-            }
         }
+    }
 }
  
 def setPage(i){
@@ -661,25 +658,26 @@ def setPage(i){
 }
 
 def getaZoneSummary(zone){
-  def daysString = ""
-  def dpw = initDPW(zone)
-  def runTime = calcRunTime(initTPW(zone), dpw)
-  if ( !learn && (settings["sensor${zone}"] != null) ) {
-  	 daysString = "if Moisture is low on: "
-     dpw = daysAvailable()
-     }  
-  if (days && (days.contains('Even') || days.contains('Odd'))) {
-    if(dpw == 1) daysString = "Every 8 days"
-    if(dpw == 2) daysString = "Every 4 days"
-    if(dpw == 4) daysString = "Every 2 days"
-    if(days.contains('Even') && days.contains('Odd')) daysString = "any day"
-  } 
-  else {
-     def int[] dpwMap = [0,0,0,0,0,0,0]
-     dpwMap = getDPWDays(dpw)
-     daysString += getRunDays(dpwMap)
-  }  
-  return "${zone}: ${runTime} minutes, ${daysString}"
+  	log.trace "getZoneSummary(${zone})"
+  	
+  	def daysString = ""
+  	def dpw = initDPW(zone)
+  	def runTime = calcRunTime(initTPW(zone), dpw)
+  	if ( !learn && (settings["sensor${zone}"] != null) ) {
+  	 	daysString = "if Moisture is low on: "
+     	dpw = daysAvailable()
+  	}  
+  	if (days && (days.contains('Even') || days.contains('Odd'))) {
+    	if (dpw == 1) daysString = "Every 8 days"
+    	if (dpw == 2) daysString = "Every 4 days"
+    	if (dpw == 4) daysString = "Every 2 days"
+    	if (days.contains('Even') && days.contains('Odd')) daysString = "any day"
+  	} else {
+    	def int[] dpwMap = [0,0,0,0,0,0,0]
+     	dpwMap = getDPWDays(dpw)
+     	daysString += getRunDays(dpwMap)
+  	}  
+  	return "${zone}: ${runTime} minutes, ${daysString}"
 }
 
 def getZoneSummary(){
@@ -701,6 +699,7 @@ def getZoneSummary(){
 }
  
 def display(i){
+	log.trace "display(${i})"
     def displayString = ""
     def dpw = initDPW(i)
     def runTime = calcRunTime(initTPW(i), dpw)
@@ -820,7 +819,7 @@ def installSchedule(){
 def writeSettings(){    
     if(!state.tpwMap) state.tpwMap = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
     if(!state.dpwMap) state.dpwMap = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
-//    if(!state.setMoisture) state.setMoisture = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+    if(state.setMoisture) state.setMoisture = null
     if(!state.seasonAdj) state.seasonAdj = 0
     if(!state.weekseasonAdj) state.weekseasonAdj = 0    
     setSeason()	    
@@ -1084,6 +1083,7 @@ def cycleLoop(i)
 
 //send cycle settings
 def writeCycles(){
+	log.trace "writeCycles()"
 	def cyclesMap = [:]
     //add pumpdelay @ 1
     cyclesMap."1" = pumpDelayString()
@@ -1138,15 +1138,18 @@ def adddays(){
 
 //Initialize Days per week, based on TPW, perDay and daysAvailable settings
 def initDPW(i){
-	if(initTPW(i) > 0) {
+	log.trace "initDPW(${i})"
+	
+	def tpw = initTPW(i)
+	if(tpw > 0) {
     	def dpw
         def perDay = 20
         if(settings["perDay${i}"]) perDay = settings["perDay${i}"].toInteger()
-    	dpw = Math.round(initTPW(i) / perDay)
+    	dpw = Math.round((tpw.toFloat() / perDay.toFloat())+0.5)
     	if(dpw <= 1) return 1
 		// 3 days per week not allowed for even or odd day selection
 	    if(dpw == 3 && days && (days.contains('Even') || days.contains('Odd')) && !(days.contains('Even') && days.contains('Odd')))
-			if(initTPW(i) / perDay < 3.0) return 2
+			if((tpw.toFloat() / perDay.toFloat()) < 3.0) return 2
 			else return 4
     	if(daysAvailable() < dpw) return daysAvailable()
     	return dpw
@@ -1164,6 +1167,7 @@ def getDPW(zone)
 
 //Initialize Time per Week
 def initTPW(i){   
+    log.trace "initTPW(${i})"
     
     if("${settings["zone${i}"]}" == null || nozzle(i) == 0 || nozzle(i) == 4 || plant(i) == 0 || !zoneActive(i.toString()) ) return 0
     
@@ -1171,7 +1175,7 @@ def initTPW(i){
     def gainAdjust = 100
     if (gain && gain != 0) gainAdjust += gain    
     
-    // apply seasonal adjustment is enabled and not set to new plants
+    // apply seasonal adjustment if enabled and not set to new plants
     def seasonAdjust = 100
     if (state.weekseasonAdj && isSeason && settings["plant${i}"] != "New Plants") seasonAdjust = state.weekseasonAdj    
 	
@@ -1181,20 +1185,23 @@ def initTPW(i){
     // Use learned, previous tpw if it is available
 	if(state.tpwMap) tpw = state.tpwMap.get(zone-1)
 	// set user time with season adjust	
-    if(settings["minWeek${i}"] != null && settings["minWeek${i}"] != 0) tpw = Math.round((("${settings["minWeek${i}"]}").toInteger().toFloat() * (seasonAdjust.toFloat() / 100.0))+0.5)
-    
-	// initial tpw calculation
-    if (tpw == null || tpw == 0 || settings["minWeek${i}"] == 0) tpw = Math.round(((plant(i) * nozzle(i)) * (gainAdjust.toFloat() / 100.0) * (seasonAdjust.toFloat() / 100.0)) +0.5)
-    // apply gain to all zones --obsolete with learn implementation--
-    //else if (gainAdjust != 100) twp = Math.round(tpw * gainAdjust / 100)
-    
-    //if (tpw <= 3) tpw = 3
+    if(settings["minWeek${i}"] != null) {
+    	if (settings["minWeek${i}"] != 0) { // use specified minWeek as starting tpw
+    		tpw = Math.round((("${settings["minWeek${i}"]}").toInteger().toFloat() * (seasonAdjust.toFloat() / 100.0))+0.5)
+    	} else if ((tpw == null) || (tpw == 0)) { // use previous calculated tpw
+    		tpw = Math.round(((plant(i) * nozzle(i)) * (gainAdjust.toFloat() / 100.0) * (seasonAdjust.toFloat() / 100.0)) +0.5)
+    	}
+    } else log.debug "initTPW: shouldn't be here - minWeek${i} is null"
+
+    log.debug "initTPW(${i}) tpw: ${tpw}"
     return tpw
 }
 
 // Get the current time per week, calls init if not defined
 def getTPW(zone)
 {
+	log.trace "getTPW(${i})"
+	
 	def i = zone.toInteger()
 	if(state.tpwMap) return state.tpwMap.get(i-1)
 	return initTPW(i)
@@ -1268,30 +1275,35 @@ def moisture(i)
     log.debug "moisture(): zone: ${i}, diffHum: ${diffHum}, tpwAdjust: ${tpwAdjust}"
     String moistureSum = ""
  
+    def newTPW = Math.round(tpw + tpwAdjust)
  // If we need to increase the amount of water per week, or we haven't watered in a few days...
-    if ((tpwAdjust > 0) || (daycount > (1.0+(6.0 / dpw.toFloat())))) {	// NOTE: this is the ONLY case that we actually reduce tpw (if we have skipped a scheduled day because we were too wet)
-    	def newTPW = Math.round(tpw + tpwAdjust)
-    	if (newTPW < (dpw * cpd)) {					// enforce a minimum of 1 minute per cycle per day
-    		newTPW = dpw * cpd 	
-    		note("warning", "Please check ${settings["sensor${i}"]}, Zone ${i} time per week is very low: ${newTPW} mins/week","w")
-    	}
-    	// Probably should have a maximum tpw also, or perhaps a maximum per day
+    if (tpwAdjust > 0) {
+    	// Probably should have a maximum tpw, or perhaps a maximum per day
     	if (newTPW >= 315) note("warning", "Please check ${settings["sensor${i}"]}, Zone ${i} time per week is very high: ${newTPW} mins/week","w")
-
-    	state.tpwMap.putAt(i-1, newTPW)
-        state.dpwMap.putAt(i-1, initDPW(i))
-    	if (daycount > (1.0+(6.0 / dpw.toFloat()))) moistureSum = "${settings["name${i}"]}, Watering: ${daycount} days since last water, ${settings["sensor${i}"]} reads ${latestHum}% SP is ${spHum}%, time adjusted by ${tpwAdjust} mins to ${newTPW} mins/week\n"
-        else moistureSum = "${settings["name${i}"]}, Watering: ${settings["sensor${i}"]} reads ${latestHum}%, SP is ${spHum}%, time adjusted by ${tpwAdjust} mins to ${newTPW} mins/week\n"
+    	state.tpwMap[i-1] = newTPW
+        state.dpwMap[i-1] = initDPW(i)
+    	moistureSum = "${settings["name${i}"]}, Watering: ${settings["sensor${i}"]} reads ${latestHum}%, SP is ${spHum}%, time adjusted by ${tpwAdjust} mins to ${newTPW} mins/week\n"
     	return [1, moistureSum]
     }
-    // else, if we are currently above the humidity sp
-    else if (tpwAdjust < 0) {
-        moistureSum = "${settings["name${i}"]}, Skipping: ${settings["sensor${i}"]} reads ${latestHum}%, SP is ${spHum}%\n"
-        return [0, moistureSum]
+    // else, if we are currently above the humidity SP
+    else if (tpwAdjust < 0) { 	// New: NEVER water if humidity is above SP
+    	float factor = (6.0 / dpw.toFloat()) + 1.0
+    	if ((daycount > factor) && (daycount < (2*factor))) { // limit decay during long streaks of humidity > SP (e.g., 7+ days of rain)
+    		if (newTPW < (dpw * cpd)) {						  // enforce a minimum of 1 minute per cycle per day
+    			newTPW = dpw * cpd 	
+    			note("warning", "Please check ${settings["sensor${i}"]}, Zone ${i} time per week is very low: ${newTPW} mins/week","w")
+    		}
+    		state.tpwMap[i-1] = newTPW
+        	state.dpwMap[i-1] = initDPW(i)
+        	moistureSum = "${settings["name${i}"]}, Skipping: ${daycount} days since last water, ${settings["sensor${i}"]} reads ${latestHum}% SP is ${spHum}%, time adjusted by ${tpwAdjust} mins to ${newTPW} mins/week\n"
+    	} else { 	// skipping, but not adjusting tpw down any more
+        	moistureSum = "${settings["name${i}"]}, Skipping: ${settings["sensor${i}"]} reads ${latestHum}%, SP is ${spHum}%\n"
+    	}
+    	return [0, moistureSum]
     } 
     // else, we are just going to water with the current settings
     else {
-        moistureSum = "${settings["name${i}"]}, Watering: ${settings["sensor${i}"]} reads ${latestHum}%, SP is ${spHum}% (no time adjustment)\n"
+        moistureSum = "${settings["name${i}"]}, Watering: ${settings["sensor${i}"]} reads ${latestHum}%, SP is ${spHum}% (no time adjustment - ${tpw} mins/week)\n"
         return [1, moistureSum]
     }
     return [0, moistureSum]
@@ -1455,20 +1467,21 @@ def isDay() {
 
 //set season adjustment & remove season adjustment
 def setSeason() {
-        
-        def zone = 1
-        while(zone <= 16) {    		
-    		if ( !learn || (settings["sensor${zone}"] == null) || state.tpwMap[zone-1] == 0) {
-            	// state.tpwMap.putAt(zone-1, 0)
-                def tpw = initTPW(zone)
-                state.tpwMap[zone-1] = tpw
-    			state.dpwMap[zone-1] = initDPW(zone)
-    			if ((tpw != 0) && (state.weekseasonAdj != 0)) {
-                	log.debug "Zone ${zone}: seasonally adjusted by ${state.weekseasonAdj-100}% to ${tpw}"
-    			}
-            }
-            zone++
-      }       
+    log.trace "setSeason()"
+    
+    def zone = 1
+    while(zone <= 16) {    		
+    	if ( !learn || (settings["sensor${zone}"] == null) || state.tpwMap[zone-1] == 0) {
+            // state.tpwMap.putAt(zone-1, 0)
+            def tpw = initTPW(zone)
+            state.tpwMap[zone-1] = tpw
+    		state.dpwMap[zone-1] = initDPW(zone)
+    		if ((tpw != 0) && (state.weekseasonAdj != 0)) {
+            	log.debug "Zone ${zone}: seasonally adjusted by ${state.weekseasonAdj-100}% to ${tpw}"
+    		}
+    	}
+        zone++
+    }       
 }
 
 //capture today's total rainfall - scheduled for just before midnight each day
@@ -1541,8 +1554,6 @@ def isWeather(){
        	TRain = wdata.current_observation.precip_today_in.toFloat()
 //		log.debug "getRainToday: ${wdata.current_observation.precip_today_in} / ${TRain}"
     }
-
-
 
     // reported rain
     def day = getWeekDay()
