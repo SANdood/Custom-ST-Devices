@@ -1256,23 +1256,25 @@ def moisture(i)
     def cpd = cycles(i)
     log.debug "moisture: zone: ${i}, tpw: ${tpw}, dpw: ${dpw}, cycles: ${cpd}"
     
-    //change to daycount    
+    //change to daycount NOTE: we aren't using daycount anymore.   
     def daycount = 1
     if (state.daycount[i-1] > 0) daycount = state.daycount[i-1]    
-    def tpwAdjust = 0
-    float diffHum 
+    float diffHum = 0.0
     if (latestHum > 0) diffHum = (spHum.toFloat() - latestHum.toFloat()) / 100.0
     else {
     	diffHum = 0.05 // Safety valve in case sensor is reporting 0% humidity (e.g., somebody pulled it out of the ground or flower pot)
     	note("warning", "Please check ${settings["sensor${i}"]}, it is currently reading 0%", "w")
     }
-		
-    if ((diffHum < -0.01) || (diffHum > 0.01)) {											// don't adjust if we are within +/-1% of target
+	
+	def tpwAdjust = 0	
+    if (diffHum > 0.01) { // we won't adjust tpw if we are within +/-1% of target
   		tpwAdjust = Math.round(((tpw.toFloat() * diffHum) + 0.5) * dpw.toFloat() * cpd.toFloat())	// Compute adjustment as a function of the current tpw
-  		// Another safety valve, limit adjustments to +/- 50% of current tpw
-  		if (tpwAdjust.abs() > (tpw.toFloat()*0.5)) tpwAdjust = (tpwAdjust > 0)? Math.round((tpw.toFloat()*0.5)+0.5) : Math.round((tpw.toFloat()*-0.5)-0.5)
+  		if (tpwAdjust > (tpw.toFloat()*0.5)) Math.round((tpw.toFloat()*0.5)+0.5) 					// limit fast rise to 50% of tpw per day
+    } else if (diffHum < -0.01) {
+    	tpwAdjust = Math.round(((tpw.toFloat() * diffHum) - 0.5) * dpw.toFloat() * cpd.toFloat())
+    	if ( tpwAdjust.abs() > (tpw.toFloat()*0.25)) tpwAdjust = Math.round((tpw.toFloat()*-0.25)-0.5)	// limit slow decay to 25% of tpw per day
     }
-    log.debug "moisture(): zone: ${i}, diffHum: ${diffHum}, tpwAdjust: ${tpwAdjust}"
+    log.debug "moisture(${i}): diffHum: ${diffHum}, tpwAdjust: ${tpwAdjust}"
     String moistureSum = ""
  
     def newTPW = Math.round(tpw + tpwAdjust)
@@ -1287,24 +1289,28 @@ def moisture(i)
     }
     // else, if we are currently above the humidity SP
     else if (tpwAdjust < 0) { 	// New: NEVER water if humidity is above SP
-    	float factor = (6.0 / dpw.toFloat()) + 1.0
-    	if ((daycount > factor) && (daycount < (2*factor))) { // limit decay during long streaks of humidity > SP (e.g., 7+ days of rain)
-    		if (newTPW < (dpw * cpd)) {						  // enforce a minimum of 1 minute per cycle per day
-    			newTPW = dpw * cpd 	
-    			note("warning", "Please check ${settings["sensor${i}"]}, Zone ${i} time per week is very low: ${newTPW} mins/week","w")
-    		}
-    		state.tpwMap[i-1] = newTPW
+		def minimum = dpw * cpd
+		if (settings["minWeek${i}"] != null) {
+    		if (settings["minWeek${i}"] != 0) minimum = settings["minWeek${i}"].toInteger()
+		}
+    	if (newTPW < minimum) {						  // enforce a minimum of 1 minute per cycle per day
+    		newTPW = dpw * cpd 	
+    		note("warning", "Please check ${settings["sensor${i}"]}, Zone ${i} time per week is very low: ${newTPW} mins/week","w")
+    	}
+        if (state.tpwMap[i-1] != newTPW) {	// are we changing the tpw?
+        	state.tpwMap[i-1] = newTPW
         	state.dpwMap[i-1] = initDPW(i)
-        	moistureSum = "${settings["name${i}"]}, Skipping: ${daycount} days since last water, ${settings["sensor${i}"]} reads ${latestHum}% SP is ${spHum}%, time adjusted by ${tpwAdjust} mins to ${newTPW} mins/week\n"
-    	} else { 	// skipping, but not adjusting tpw down any more
-        	moistureSum = "${settings["name${i}"]}, Skipping: ${settings["sensor${i}"]} reads ${latestHum}%, SP is ${spHum}%\n"
+    		moistureSum = "${settings["name${i}"]}, Skipping: ${settings["sensor${i}"]} reads ${latestHum}% SP is ${spHum}%, time adjusted by ${tpwAdjust} mins to ${newTPW} mins/week\n"
+        } else {							// not changing tpw
+        	moistureSum = "${settings["name${i}"]}, Skipping: ${settings["sensor${i}"]} reads ${latestHum}%, SP is ${spHum}% (no time adjustment, ${tpw} mins/week)\n"
     	}
     	return [0, moistureSum]
-    } 
-    // else, we are just going to water with the current settings
-    else {
-        moistureSum = "${settings["name${i}"]}, Watering: ${settings["sensor${i}"]} reads ${latestHum}%, SP is ${spHum}% (no time adjustment - ${tpw} mins/week)\n"
+    } else if (diffHum >= 0.0) {		// assert tpwAdjust == 0 
+        moistureSum = "${settings["name${i}"]}, Watering: ${settings["sensor${i}"]} reads ${latestHum}%, SP is ${spHum}% (no time adjustment, ${tpw} mins/week)\n"
         return [1, moistureSum]
+    } else { 							// nassert diffUm < 0.0 - never water if current sensor > SP
+    	moistureSum = "${settings["name${i}"]}, Skipping: ${settings["sensor${i}"]} reads ${latestHum}%, SP is ${spHum}% (no time adjustment, ${tpw} mins/week)\n"
+    	return [0, moistureSum]
     }
     return [0, moistureSum]
 }  
@@ -1650,8 +1656,8 @@ def isWeather(){
         	return true
     	}
     } else { // we have at least one sensor
-    	// Ignore rain sensor & historic rain - only skip if more than setrainDelay is expected before midnight tomorrow
-    	def expectedRain = (qpfTodayIn-TRain)
+    	// Ignore rain sensor & historical rain - only skip if more than setrainDelay is expected before midnight tomorrow
+    	def expectedRain = (qpfTodayIn-TRain)	// ignore rain that has already fallen so far today - sensors should already reflect that
     	if (expectedRain > setrainDelay){              
         	note("rainy", "is skipping watering, ${expectedRain}in rain expected yet today.", "d")        
         	return true
@@ -1852,7 +1858,6 @@ def createDPWMap() {
 	        }
 	      }
       }
-
     }
   
   	//log.debug "DPW: ${runDays}"
