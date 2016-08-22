@@ -1274,6 +1274,7 @@ def moisture(i)
   		tpwAdjust = Math.round(((tpw.toFloat() * diffHum) + 0.5) * dpw.toFloat() * cpd.toFloat())	// Compute adjustment as a function of the current tpw
   		if (tpwAdjust > (tpw.toFloat()*0.5)) tpwAdjust = Math.round((tpw.toFloat()*0.5)+0.5) 		// limit fast rise to 50% of tpw per day
     } else if (diffHum < -0.01) {
+    	if (diffHum < -0.05) diffHum = -0.05			// try not to over-compensate for a heavy rainstorm...
     	tpwAdjust = Math.round(((tpw.toFloat() * diffHum) - 0.5) * dpw.toFloat() * cpd.toFloat())
     	if ( tpwAdjust < (tpw.toFloat()*-0.20)) tpwAdjust = Math.round((tpw.toFloat()*-0.20)-0.5)	// limit slow decay to 20% of tpw per day
     }
