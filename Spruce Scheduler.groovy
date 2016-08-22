@@ -1228,14 +1228,16 @@ def moisture(i)
     // Check if sensor has reported within last 48 hours
     def hours = 48
     def yesterday = new Date(now() - (1000 * 60 * 60 * hours).toLong())    
-    def eventsSinceYesterday = (settings["sensor${i}"].eventsSince(yesterday, [max: 50])?.findAll { it.name == "humidity" })
+    def lastHumDate = settings["sensor${i}"].latestState("humidity").date
+    if (lastHumDate < yesterday) {
+//    def eventsSinceYesterday = (settings["sensor${i}"].eventsSince(yesterday, [max: 50])?.findAll { it.name == "humidity" })
     //log.debug "there have been ${eventsSinceYesterday.size()} humidity events since yesterday"
-    if (eventsSinceYesterday.size() < 1){    
+//    if (eventsSinceYesterday.size() < 1){    
     	//change to seperate warning note?
         //note("warning", "Please check ${settings["sensor${i}"]}, no humidity reports in the last ${hours} hours", "w")
         return [1, "Please check ${settings["sensor${i}"]}, no humidity reports in the last ${hours} hours\n"]	//change to 1
-    }    
-    
+    }
+
     def latestHum = settings["sensor${i}"].latestValue("humidity")
     def spHum = getDrySp(i).toInteger()
     if (!learn)
@@ -1264,7 +1266,7 @@ def moisture(i)
     if (latestHum > 0) diffHum = (spHum.toFloat() - latestHum.toFloat()) / 100.0
     else {
     	diffHum = 0.02 // Safety valve in case sensor is reporting 0% humidity (e.g., somebody pulled it out of the ground or flower pot)
-    	note("warning", "Please check ${settings["sensor${i}"]}, it is currently reading 0%", "w")
+    	note("warning", "Please check sensor ${settings["sensor${i}"]}, it is currently reading 0%", "w")
     }
 	
 	def tpwAdjust = 0	
@@ -1273,7 +1275,7 @@ def moisture(i)
   		if (tpwAdjust > (tpw.toFloat()*0.5)) tpwAdjust = Math.round((tpw.toFloat()*0.5)+0.5) 		// limit fast rise to 50% of tpw per day
     } else if (diffHum < -0.01) {
     	tpwAdjust = Math.round(((tpw.toFloat() * diffHum) - 0.5) * dpw.toFloat() * cpd.toFloat())
-    	if ( tpwAdjust < (tpw.toFloat()*-0.25)) tpwAdjust = Math.round((tpw.toFloat()*-0.25)-0.5)	// limit slow decay to 25% of tpw per day
+    	if ( tpwAdjust < (tpw.toFloat()*-0.20)) tpwAdjust = Math.round((tpw.toFloat()*-0.20)-0.5)	// limit slow decay to 20% of tpw per day
     }
     log.debug "moisture(${i}): diffHum: ${diffHum}, tpwAdjust: ${tpwAdjust}"
     String moistureSum = ""
@@ -1281,6 +1283,9 @@ def moisture(i)
     def newTPW = Math.round(tpw + tpwAdjust)
     if (tpwAdjust > 0) {		// need more water
     	// Probably should have a maximum tpw, or perhaps a maximum per day
+    	
+    	def maxTPW = dpw * 60 * 2				// arbitrary maximum of 2 hours per scheduled watering days/week
+    	if (newTPW > maxTPW) newTPW = maxTPW		
     	if (newTPW >= 315) note("warning", "Please check ${settings["sensor${i}"]}, Zone ${i} time per week is very high: ${newTPW} mins/week","w")
 
     	state.tpwMap[i-1] = newTPW
@@ -1313,7 +1318,7 @@ def moisture(i)
     } else if (diffHum >= 0.0) {		// assert tpwAdjust == 0 
         moistureSum = "${settings["name${i}"]}, Watering: ${settings["sensor${i}"]} reads ${latestHum}%, SP is ${spHum}% (no time adjustment, ${tpw} mins/week)\n"
         return [1, moistureSum]
-    } else { 							// nassert diffUm < 0.0 - never water if current sensor > SP
+    } else { 							// assert diffUm < 0.0 - never water if current sensor > SP
     	moistureSum = "${settings["name${i}"]}, Skipping: ${settings["sensor${i}"]} reads ${latestHum}%, SP is ${spHum}% (no time adjustment, ${tpw} mins/week)\n"
     	return [0, moistureSum]
     }
