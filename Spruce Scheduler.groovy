@@ -658,7 +658,7 @@ def setPage(i){
 }
 
 def getaZoneSummary(zone){
-  	log.trace "getZoneSummary(${zone})"
+  	//log.trace "getZoneSummary(${zone})"
   	
   	def daysString = ""
   	def dpw = initDPW(zone)
@@ -699,7 +699,7 @@ def getZoneSummary(){
 }
  
 def display(i){
-	log.trace "display(${i})"
+	//log.trace "display(${i})"
     def displayString = ""
     def dpw = initDPW(i)
     def runTime = calcRunTime(initTPW(i), dpw)
@@ -914,13 +914,13 @@ def busyOff(evt){
 //run check every day
 def preCheck(){	
     if (!isDay()) {
-		adddays()
+//		adddays()
 		log.debug "Skipping: ${app.label} is not scheduled for today."		// Silent - no note
 		return
 	}
 	if (!busy()) {    	
         note("active", "${app.label} starting pre-check.", "d")
-        adddays()
+//        adddays()
 	   	state.run = true
        	if (!isWeather()) checkRunMap()
        	else {
@@ -1047,9 +1047,9 @@ def cycleLoop(i)
 
 			// Run this zone if soil moisture needed or if it is a weekly
             // We run at least once a week and let moisture lower the time if needed
-            if ( (soil[0] == 1 ) || (learn && dpw == 1) )
+            if ( (soil[0] == 1 ) /* || (learn && dpw == 1) */)
             	{
-                state.daycount[zone-1] = 0
+                //state.daycount[zone-1] = 0
                 cyc = cycles(zone)
                 dpw = getDPW(zone)
                 rtime = calcRunTime(getTPW(zone), dpw)                
@@ -1062,7 +1062,7 @@ def cycleLoop(i)
             	}
         	}
 		}
-        else state.daycount[zone-1] = 0  // Zone isn't scheduled
+        //else state.daycount[zone-1] = 0  // Zone isn't scheduled
         if (nozzle(zone) == 4) pumpMap += "${settings["name${zone}"]}: ${settings["zone${zone}"]} on\n"
         timeMap."${zone+1}" = "${rtime}"
         zone++  
@@ -1083,7 +1083,7 @@ def cycleLoop(i)
 
 //send cycle settings
 def writeCycles(){
-	log.trace "writeCycles()"
+	//log.trace "writeCycles()"
 	def cyclesMap = [:]
     //add pumpdelay @ 1
     cyclesMap."1" = pumpDelayString()
@@ -1128,17 +1128,17 @@ def doorClosed(evt){
 }
 
 //days since last run
-def adddays(){
-	def i = 0
-    while(i <= 15){
-    	state.daycount[i] = state.daycount[i] + 1        
-        i++
-    }	
-}
+//def adddays(){
+//	def i = 0
+//    while(i <= 15){
+//    	state.daycount[i] = state.daycount[i] + 1        
+//        i++
+//    }	
+//}
 
 //Initialize Days per week, based on TPW, perDay and daysAvailable settings
 def initDPW(i){
-	log.trace "initDPW(${i})"
+	//log.trace "initDPW(${i})"
 	
 	def tpw = initTPW(i)
 	if(tpw > 0) {
@@ -1167,7 +1167,7 @@ def getDPW(zone)
 
 //Initialize Time per Week
 def initTPW(i){   
-    log.trace "initTPW(${i})"
+    //log.trace "initTPW(${i})"
     
     if("${settings["zone${i}"]}" == null || nozzle(i) == 0 || nozzle(i) == 4 || plant(i) == 0 || !zoneActive(i.toString()) ) return 0
     
@@ -1200,7 +1200,7 @@ def initTPW(i){
 // Get the current time per week, calls init if not defined
 def getTPW(zone)
 {
-	log.trace "getTPW(${i})"
+	//log.trace "getTPW(${i})"
 	
 	def i = zone.toInteger()
 	if(state.tpwMap) return state.tpwMap.get(i-1)
@@ -1229,7 +1229,7 @@ def moisture(i)
     def hours = 48
     def yesterday = new Date(now() - (1000 * 60 * 60 * hours).toLong())    
     def eventsSinceYesterday = (settings["sensor${i}"].eventsSince(yesterday, [max: 50])?.findAll { it.name == "humidity" })
-    log.debug "there have been ${eventsSinceYesterday.size()} since yesterday"
+    //log.debug "there have been ${eventsSinceYesterday.size()} humidity events since yesterday"
     if (eventsSinceYesterday.size() < 1){    
     	//change to seperate warning note?
         //note("warning", "Please check ${settings["sensor${i}"]}, no humidity reports in the last ${hours} hours", "w")
@@ -1257,46 +1257,51 @@ def moisture(i)
     log.debug "moisture: zone: ${i}, tpw: ${tpw}, dpw: ${dpw}, cycles: ${cpd}"
     
     //change to daycount NOTE: we aren't using daycount anymore.   
-    def daycount = 1
-    if (state.daycount[i-1] > 0) daycount = state.daycount[i-1]    
+    //def daycount = 1
+    //if (state.daycount[i-1] > 0) daycount = state.daycount[i-1]    
+    
     float diffHum = 0.0
     if (latestHum > 0) diffHum = (spHum.toFloat() - latestHum.toFloat()) / 100.0
     else {
-    	diffHum = 0.05 // Safety valve in case sensor is reporting 0% humidity (e.g., somebody pulled it out of the ground or flower pot)
+    	diffHum = 0.02 // Safety valve in case sensor is reporting 0% humidity (e.g., somebody pulled it out of the ground or flower pot)
     	note("warning", "Please check ${settings["sensor${i}"]}, it is currently reading 0%", "w")
     }
 	
 	def tpwAdjust = 0	
     if (diffHum > 0.01) { // we won't adjust tpw if we are within +/-1% of target
   		tpwAdjust = Math.round(((tpw.toFloat() * diffHum) + 0.5) * dpw.toFloat() * cpd.toFloat())	// Compute adjustment as a function of the current tpw
-  		if (tpwAdjust > (tpw.toFloat()*0.5)) Math.round((tpw.toFloat()*0.5)+0.5) 					// limit fast rise to 50% of tpw per day
+  		if (tpwAdjust > (tpw.toFloat()*0.5)) tpwAdjust = Math.round((tpw.toFloat()*0.5)+0.5) 		// limit fast rise to 50% of tpw per day
     } else if (diffHum < -0.01) {
     	tpwAdjust = Math.round(((tpw.toFloat() * diffHum) - 0.5) * dpw.toFloat() * cpd.toFloat())
-    	if ( tpwAdjust.abs() > (tpw.toFloat()*0.25)) tpwAdjust = Math.round((tpw.toFloat()*-0.25)-0.5)	// limit slow decay to 25% of tpw per day
+    	if ( tpwAdjust < (tpw.toFloat()*-0.25)) tpwAdjust = Math.round((tpw.toFloat()*-0.25)-0.5)	// limit slow decay to 25% of tpw per day
     }
     log.debug "moisture(${i}): diffHum: ${diffHum}, tpwAdjust: ${tpwAdjust}"
     String moistureSum = ""
  
     def newTPW = Math.round(tpw + tpwAdjust)
- // If we need to increase the amount of water per week, or we haven't watered in a few days...
-    if (tpwAdjust > 0) {
+    if (tpwAdjust > 0) {		// need more water
     	// Probably should have a maximum tpw, or perhaps a maximum per day
     	if (newTPW >= 315) note("warning", "Please check ${settings["sensor${i}"]}, Zone ${i} time per week is very high: ${newTPW} mins/week","w")
+
     	state.tpwMap[i-1] = newTPW
         state.dpwMap[i-1] = initDPW(i)
     	moistureSum = "${settings["name${i}"]}, Watering: ${settings["sensor${i}"]} reads ${latestHum}%, SP is ${spHum}%, time adjusted by ${tpwAdjust} mins to ${newTPW} mins/week\n"
     	return [1, moistureSum]
     }
     // else, if we are currently above the humidity SP
-    else if (tpwAdjust < 0) { 	// New: NEVER water if humidity is above SP
-		def minimum = dpw * cpd
-		if (settings["minWeek${i}"] != null) {
-    		if (settings["minWeek${i}"] != 0) minimum = settings["minWeek${i}"].toInteger()
+    else if (tpwAdjust < 0) { 	// New: No longer water if sensor humidity is above SP
+    	// Find the minimum tpw
+		def minimum = dpw * cpd						// at least 1 minute per cycle per scheduled day
+		def minLimit = 0
+		if (settings["minWeek${i}"] != null) {		// if minWeek != 0, then use that as the minimum limiter
+    		if (settings["minWeek${i}"] != 0) minLimit = settings["minWeek${i}"].toInteger()
 		}
-    	if (newTPW < minimum) {						  // enforce a minimum of 1 minute per cycle per day
-    		newTPW = dpw * cpd 	
+		if (minLimit > 0) {
+			if (newTPW < minLimit) newTPW = minLimit
+		} else if (newTPW < minimum) {
+			newTPW = minimum
     		note("warning", "Please check ${settings["sensor${i}"]}, Zone ${i} time per week is very low: ${newTPW} mins/week","w")
-    	}
+		}
         if (state.tpwMap[i-1] != newTPW) {	// are we changing the tpw?
         	state.tpwMap[i-1] = newTPW
         	state.dpwMap[i-1] = initDPW(i)
@@ -1473,7 +1478,7 @@ def isDay() {
 
 //set season adjustment & remove season adjustment
 def setSeason() {
-    log.trace "setSeason()"
+    //log.trace "setSeason()"
     
     def zone = 1
     while(zone <= 16) {    		
@@ -1518,7 +1523,7 @@ def getRainToday() {
 //check weather
 def isWeather(){
     def wzipcode = "${zipString()}"   
-   	log.debug "weather ${zipString()}"   
+   	log.debug "weather ${wzipcode}"   
     //seasonal q factor
     def qFact = 0.7
 //    Map wdata = getWeatherFeature('forecast10day/conditions/geolookup/yesterday/astronomy', wzipcode)
