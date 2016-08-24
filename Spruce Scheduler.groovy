@@ -1269,14 +1269,17 @@ def moisture(i)
     	note("warning", "Please check sensor ${settings["sensor${i}"]}, it is currently reading 0%", "w")
     }
 	
+	def minimum = cpd * dpw
 	def tpwAdjust = 0	
     if (diffHum > 0.01) { // we won't adjust tpw if we are within +/-1% of target
   		tpwAdjust = Math.round(((tpw.toFloat() * diffHum) + 0.5) * dpw.toFloat() * cpd.toFloat())	// Compute adjustment as a function of the current tpw
   		if (tpwAdjust > (tpw.toFloat()*0.5)) tpwAdjust = Math.round((tpw.toFloat()*0.5)+0.5) 		// limit fast rise to 50% of tpw per day
+		if (tpwAdjust < minimum) tpwAdjust = minimum      // but we need to move at least 1 minute per cycle per day to actually increase the watering time
     } else if (diffHum < -0.01) {
     	if (diffHum < -0.05) diffHum = -0.05			// try not to over-compensate for a heavy rainstorm...
     	tpwAdjust = Math.round(((tpw.toFloat() * diffHum) - 0.5) * dpw.toFloat() * cpd.toFloat())
-    	if ( tpwAdjust < (tpw.toFloat()*-0.20)) tpwAdjust = Math.round((tpw.toFloat()*-0.20)-0.5)	// limit slow decay to 20% of tpw per day
+    	if (tpwAdjust < (tpw.toFloat()*-0.20)) tpwAdjust = Math.round((tpw.toFloat()*-0.20)-0.5)	// limit slow decay to 20% of tpw per day
+		if (tpwAdjust > (-1 * minimum)) tpwAdjust = -1 * minimum // but we need to move at least 1 minute per cycle per day to actually increase the watering time
     }
     log.debug "moisture(${i}): diffHum: ${diffHum}, tpwAdjust: ${tpwAdjust}"
     String moistureSum = ""
@@ -1297,7 +1300,6 @@ def moisture(i)
     // else, if we are currently above the humidity SP
     else if (tpwAdjust < 0) { 	// New: No longer water if sensor humidity is above SP
     	// Find the minimum tpw
-		def minimum = dpw * cpd						// at least 1 minute per cycle per scheduled day
 		def minLimit = 0
 		if (settings["minWeek${i}"] != null) {		// if minWeek != 0, then use that as the minimum limiter
     		if (settings["minWeek${i}"] != 0) minLimit = settings["minWeek${i}"].toInteger()
