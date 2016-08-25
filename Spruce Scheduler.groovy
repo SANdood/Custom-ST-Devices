@@ -1054,7 +1054,7 @@ def cycleLoop(i)
                 dpw = getDPW(zone)
                 rtime = calcRunTime(getTPW(zone), dpw)                
                 //daily weather adjust if no sensor
-                if(isSeason && settings["sensor${zone}"] == null) rtime = Math.round(((rtime.toFloat() / cyc.toFloat()) * (state.seasonAdj.toFloat() / 100.0))+0.5)
+                if(isSeason && (settings["sensor${zone}"] == null || !learn)) rtime = Math.round(((rtime.toFloat() / cyc.toFloat()) * (state.seasonAdj.toFloat() / 100.0))+0.5)
                 // runTime is total run time devided by num cycles
                 else rtime = Math.round((rtime.toFloat() / cyc.toFloat()) + 0.5) 			// round up instead of down (e.g., 23 / 2 = 12, not 11)                 
                 runNowMap += "${settings["name${zone}"]}: ${cyc} x ${rtime} min\n"
@@ -1168,8 +1168,8 @@ def getDPW(zone)
 //Initialize Time per Week
 def initTPW(i){   
     //log.trace "initTPW(${i})"
-    
-    if("${settings["zone${i}"]}" == null || nozzle(i) == 0 || nozzle(i) == 4 || plant(i) == 0 || !zoneActive(i.toString()) ) return 0
+    def zone = i.toInteger()
+    if("${settings["zone${i}"]}" == null || nozzle(zone) == 0 || nozzle(zone) == 4 || plant(zone) == 0 || !zoneActive(i.toString()) ) return 0
     
     // apply gain adjustment
     def gainAdjust = 100
@@ -1179,17 +1179,15 @@ def initTPW(i){
     def seasonAdjust = 100
     if (state.weekseasonAdj && isSeason && settings["plant${i}"] != "New Plants") seasonAdjust = state.weekseasonAdj    
 	
-    def zone = i.toInteger()
 	def tpw = 0
-	
+
     // Use learned, previous tpw if it is available
 	if(state.tpwMap) tpw = state.tpwMap.get(zone-1)
 	// set user time with season adjust	
-    if(settings["minWeek${i}"] != null) {
-    	if (settings["minWeek${i}"] != 0) { // use specified minWeek as starting tpw
+    if((settings["minWeek${i}"] != null) && (settings["minWeek${i}"] != 0) { 
     		tpw = Math.round((("${settings["minWeek${i}"]}").toInteger().toFloat() * (seasonAdjust.toFloat() / 100.0))+0.5)
     	} else if ((tpw == null) || (tpw == 0)) { // use previous calculated tpw
-    		tpw = Math.round(((plant(i) * nozzle(i)) * (gainAdjust.toFloat() / 100.0) * (seasonAdjust.toFloat() / 100.0)) +0.5)
+    		tpw = Math.round(((plant(zone) * nozzle(zone)) * (gainAdjust.toFloat() / 100.0) * (seasonAdjust.toFloat() / 100.0)) +0.5)
     	}
     } else log.debug "initTPW: shouldn't be here - minWeek${i} is null"
 
