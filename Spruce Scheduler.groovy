@@ -1,5 +1,5 @@
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    /**
- *  Spruce Scheduler Pre-release V2.52.4 8/17/2016
+/**
+ *  Spruce Scheduler Pre-release V2.52.5 8/17/2016
  *
  *	
  *  Copyright 2015 Plaid Systems
@@ -51,7 +51,7 @@ definition(
     name: "Spruce Scheduler v2.52",
     namespace: "plaidsystems",
     author: "Plaid Systems",
-    description: "Spruce automatic water scheduling app v2.52.3",
+    description: "Spruce automatic water scheduling app v2.52.5",
     category: "Green Living",
     iconUrl: "http://www.plaidsystems.com/smartthings/st_spruce_leaf_250f.png",
     iconX2Url: "http://www.plaidsystems.com/smartthings/st_spruce_leaf_250f.png",
@@ -204,7 +204,8 @@ def contactSensorString(){
 }
 
 def isRainString(){
-	if(isRain) return "${rainDelay}"
+	if (isRain && rainDelay == null) return "0.2"
+    if(isRain) return "${rainDelay}"
     return "Off"
 }    
     
@@ -520,7 +521,7 @@ def zoneSetPage(){
                       title: "Optional: Enter total watering time per week", 
                       "This value will replace the calculated time from other settings"
          
-                input "minWeek${state.app}", "number", title: "Water time per week (minutes).\nDefault: 0 = autoadjust", required: false
+                input "minWeek${state.app}", "number", title: "Minimum water time per week.\nDefault: 0 = autoadjust", description: "minutes per week", required: false
                 
                 input "perDay${state.app}", "number", title: "Guideline value for time per day, this divides minutes per week into watering days. Default: 20", defaultValue: '20', required: false
         }
@@ -1168,28 +1169,29 @@ def getDPW(zone)
 //Initialize Time per Week
 def initTPW(i){   
     //log.trace "initTPW(${i})"
-    def zone = i.toInteger()
-    if("${settings["zone${i}"]}" == null || nozzle(zone) == 0 || nozzle(zone) == 4 || plant(zone) == 0 || !zoneActive(i.toString()) ) return 0
+    
+    if("${settings["zone${i}"]}" == null || nozzle(i) == 0 || nozzle(i) == 4 || plant(i) == 0 || !zoneActive(i.toString()) ) return 0
     
     // apply gain adjustment
     def gainAdjust = 100
-    if (gain && gain != 0) gainAdjust += gain    
+    if (gain && gain != 0) gainAdjust += gain
     
     // apply seasonal adjustment if enabled and not set to new plants
     def seasonAdjust = 100
     if (state.weekseasonAdj && isSeason && settings["plant${i}"] != "New Plants") seasonAdjust = state.weekseasonAdj    
 	
+    def zone = i.toInteger()
 	def tpw = 0
-
-    // Use learned, previous tpw if it is available
-	if(state.tpwMap) tpw = state.tpwMap.get(zone-1)
+	// Use learned, previous tpw if it is available
+	if(state.tpwMap && settings["sensor${i}"] != null && learn) tpw = state.tpwMap.get(zone-1)
 	// set user time with season adjust	
-    if((settings["minWeek${i}"] != null) && (settings["minWeek${i}"] != 0) { 
-    		tpw = Math.round((("${settings["minWeek${i}"]}").toInteger().toFloat() * (seasonAdjust.toFloat() / 100.0))+0.5)
-    	} else if ((tpw == null) || (tpw == 0)) { // use previous calculated tpw
-    		tpw = Math.round(((plant(zone) * nozzle(zone)) * (gainAdjust.toFloat() / 100.0) * (seasonAdjust.toFloat() / 100.0)) +0.5)
+    if (settings["minWeek${i}"] != null && settings["minWeek${i}"] != 0) {
+    	tpw = Math.round((("${settings["minWeek${i}"]}").toInteger().toFloat() * (seasonAdjust.toFloat() / 100.0))+0.5)
+    	} 
+    else if ((tpw == null) || (tpw == 0)) { // use previous calculated tpw
+    	tpw = Math.round(((plant(i) * nozzle(i)) * (gainAdjust.toFloat() / 100.0) * (seasonAdjust.toFloat() / 100.0)) +0.5)
     	}
-    } else log.debug "initTPW: shouldn't be here - minWeek${i} is null"
+    else log.debug "initTPW: shouldn't be here - minWeek${i} is null"
 
     log.debug "initTPW(${i}) tpw: ${tpw}"
     return tpw
@@ -1198,7 +1200,7 @@ def initTPW(i){
 // Get the current time per week, calls init if not defined
 def getTPW(zone)
 {
-	//log.trace "getTPW(${i})"
+	log.debug "getTPW(${i})"
 	
 	def i = zone.toInteger()
 	if(state.tpwMap) return state.tpwMap.get(i-1)
@@ -1325,6 +1327,7 @@ def moisture(i)
     }
     return [0, moistureSum]
 }  
+
 
 //get moisture SP
 def getDrySp(i){
@@ -1489,7 +1492,7 @@ def setSeason() {
     def zone = 1
     while(zone <= 16) {    		
     	if ( !learn || (settings["sensor${zone}"] == null) || state.tpwMap[zone-1] == 0) {
-            // state.tpwMap.putAt(zone-1, 0)
+            //state.tpwMap.putAt(zone-1, 0) //don't need with ln 1186 modifications
             def tpw = initTPW(zone)
             state.tpwMap[zone-1] = tpw
     		state.dpwMap[zone-1] = initDPW(zone)
