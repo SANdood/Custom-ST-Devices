@@ -1,5 +1,5 @@
 /**
- *  Spruce Scheduler Pre-release V2.52.5 8/17/2016
+ *  Spruce Scheduler Pre-release V2.52.6 8/17/2016
  *
  *	
  *  Copyright 2015 Plaid Systems
@@ -51,7 +51,7 @@ definition(
     name: "Spruce Scheduler v2.52",
     namespace: "plaidsystems",
     author: "Plaid Systems",
-    description: "Spruce automatic water scheduling app v2.52.5",
+    description: "Spruce automatic water scheduling app v2.52.6",
     category: "Green Living",
     iconUrl: "http://www.plaidsystems.com/smartthings/st_spruce_leaf_250f.png",
     iconX2Url: "http://www.plaidsystems.com/smartthings/st_spruce_leaf_250f.png",
@@ -485,7 +485,7 @@ def zoneSetPage(){
                 //description: "Set sprinkler nozzle type or turn zone off")
                 description: "Sprinkler type descriptions")         
             
-             input "zone${state.app}", "enum", title: "Sprinkler Type", multiple: false, required: false, defaultValue: 'Off', metadata: [values: ['Off', 'Spray', 'Rotor', 'Drip', 'Master Valve', 'Pump']]
+             input "zone${state.app}", "enum", title: "Sprinkler Type", multiple: false, required: false, defaultValue: 'Off', submitOnChange: true, metadata: [values: ['Off', 'Spray', 'Rotor', 'Drip', 'Master Valve', 'Pump']]
             
              }
         section(""){            
@@ -504,7 +504,7 @@ def zoneSetPage(){
                 //description: "Set watering options")
                 description: "Watering option descriptions")
             
-	            input "option${state.app}", "enum", title: "Options", multiple: false, required: false, defaultValue: 'Cycle 2x', metadata: [values: ['Slope', 'Sand', 'Clay', 'No Cycle', 'Cycle 2x', 'Cycle 3x']]    
+	            input "option${state.app}", "enum", title: "Options", multiple: false, required: false, defaultValue: 'Cycle 2x', submitOnChange: true,metadata: [values: ['Slope', 'Sand', 'Clay', 'No Cycle', 'Cycle 2x', 'Cycle 3x']]    
 
             }            
         section(""){
@@ -662,7 +662,7 @@ def getaZoneSummary(zone){
   	//log.trace "getZoneSummary(${zone})"
   	
   	def daysString = ""
-  	def tpw = initTPW(zone)
+    def tpw = initTPW(zone)
   	def dpw = initDPW(zone)
   	def runTime = calcRunTime(tpw, dpw)
   	if ( !learn && (settings["sensor${zone}"] != null) ) {
@@ -692,7 +692,7 @@ def getZoneSummary(){
     while(zone <= 16) {	  
       def zoneSum = getaZoneSummary(zone)
       if (nozzle(zone) == 4) summary = "${summary}\n${zone}: ${settings["zone${zone}"]}"
-      else if ( "${runTime}" != "0" && "${initDPW(zone)}" != "0" && zoneActive(zone.toString()) ) summary = "${summary}\n${zoneSum}"
+      else if ( "${initDPW(zone)}" != "0" && zoneActive(zone.toString()) ) summary = "${summary}\n${zoneSum}"
       zone++
     }
     if(summary == "") return zoneString()	//"Setup all 16 zones"
@@ -702,14 +702,14 @@ def getZoneSummary(){
  
 def display(i){
 	//log.trace "display(${i})"
-    def displayString = ""
+    def displayString = ""    
     def tpw = initTPW(i)
     def dpw = initDPW(i)
     def runTime = calcRunTime(tpw, dpw)
     if ("${settings["zone${i}"]}" != "null") displayString += "${settings["zone${i}"]} : "
     if ("${settings["plant${i}"]}" != "null") displayString += "${settings["plant${i}"]} : "
     if ("${settings["option${i}"]}" != "null") displayString += "${settings["option${i}"]} : "
-    if ("${settings["sensor${i}"]}" != "null") displayString += "${settings["sensor${i}"]} : "
+    if ("${settings["sensor${i}"]}" != "null") displayString += "${settings["sensor${i}"]}=${getDrySp("${i}")}% : "
     if ("${runTime}" != "0" && "${dpw}" != "0") displayString += "${runTime} minutes, ${dpw} days per week"
     return "${displayString}"
 }
@@ -811,6 +811,7 @@ def installSchedule(){
 		Random rand = new Random()
     	def randomSeconds = rand.nextInt(59)    	
         schedule("${randomSeconds} 57 23 1/1 * ? *", getRainToday)		// capture today's rainfall just before midnight
+
         writeSettings()
         note("schedule", "${app.label} schedule set to start at ${startTimeString()}", "w")
     }
@@ -1071,11 +1072,14 @@ def cycleLoop(i)
     }
 	if (soilString) {
         note('moisture', "Moisture Sensors:\n${soilString}",'m')
+
         }
     if (!runNowMap) return runNowMap
     
     //send settings to Spruce Controller
     switches.settingsMap(timeMap,4002)
+
+
 	runIn(30, writeCycles)
     return runNowMap += pumpMap    
 }
@@ -1098,6 +1102,7 @@ def writeCycles(){
 //        	state.tpwMap.putAt(zone-1, initTPW(zone))
 //            state.dpwMap.putAt(zone-1, initDPW(zone))            
 //        }
+
         zone++
     }
     switches.settingsMap(cyclesMap, 4001)
@@ -1130,7 +1135,8 @@ def doorClosed(evt){
 def initDPW(i){
 	log.debug "initDPW(${i})"
 	
-	def tpw = getTPW(i)		// was initTPW
+	def tpw = getTPW(i)		// was getTPW -does not update times in scheduler without initTPW
+
 	if(tpw > 0) {
     	def dpw
         def perDay = 20
@@ -1184,7 +1190,7 @@ def initTPW(i){
     	tpw = Math.round(((plant(i) * nozzle(i)) * (gainAdjust.toFloat() / 100.0) * (seasonAdjust.toFloat() / 100.0)) +0.5)
     	}
     // else log.debug "initTPW: shouldn't be here - minWeek${i} is null"
-
+	state.tpwMap.putAt(zone-1, tpw)
     log.debug "initTPW(${i}) tpw: ${tpw}"
     return tpw
 }
@@ -1222,6 +1228,11 @@ def moisture(i)
     def yesterday = new Date(now() - (1000 * 60 * 60 * hours).toLong())    
     def lastHumDate = settings["sensor${i}"].latestState("humidity").date
     if (lastHumDate < yesterday) {
+
+
+
+
+
         return [1, "Please check ${settings["sensor${i}"]}, no humidity reports in the last ${hours} hours\n"]	//change to 1
     }
 
@@ -1245,6 +1256,10 @@ def moisture(i)
     def cpd = cycles(i)
     log.debug "moisture: zone: ${i}, tpw: ${tpw}, dpw: ${dpw}, cycles: ${cpd}"
     
+
+
+
+
     float diffHum = 0.0
     if (latestHum > 0) diffHum = (spHum.toFloat() - latestHum.toFloat()) / 100.0
     else {
@@ -1932,3 +1947,4 @@ def zoneSetPage16(){
 	state.app = 16
     zoneSetPage()
     }
+
