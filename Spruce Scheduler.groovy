@@ -662,8 +662,9 @@ def getaZoneSummary(zone){
   	//log.trace "getZoneSummary(${zone})"
   	
   	def daysString = ""
+  	def tpw = initTPW(zone)
   	def dpw = initDPW(zone)
-  	def runTime = calcRunTime(initTPW(zone), dpw)
+  	def runTime = calcRunTime(tpw, dpw)
   	if ( !learn && (settings["sensor${zone}"] != null) ) {
   	 	daysString = "if Moisture is low on: "
      	dpw = daysAvailable()
@@ -702,8 +703,9 @@ def getZoneSummary(){
 def display(i){
 	//log.trace "display(${i})"
     def displayString = ""
+    def tpw = initTPW(i)
     def dpw = initDPW(i)
-    def runTime = calcRunTime(initTPW(i), dpw)
+    def runTime = calcRunTime(tpw, dpw)
     if ("${settings["zone${i}"]}" != "null") displayString += "${settings["zone${i}"]} : "
     if ("${settings["plant${i}"]}" != "null") displayString += "${settings["plant${i}"]} : "
     if ("${settings["option${i}"]}" != "null") displayString += "${settings["option${i}"]} : "
@@ -802,14 +804,13 @@ def installSchedule(){
     int randomOffset = 0
     
     if (enableManual) subscribe(switches, "switch.programOn", manualStart)
-    else randomOffset = getRandomNumber(1) * 1000	//random number added to start time so multiple schedules do not have identical time
+    randomOffset = getRandomNumber(1) * 1000	//random number added to start time so multiple schedules do not have identical time
     if (switches && startTime && enable){    	
         def checktime = timeToday(startTime, location.timeZone).getTime() + randomOffset
     	schedule(checktime, preCheck)	//check weather & Days
 		Random rand = new Random()
     	def randomSeconds = rand.nextInt(59)    	
         schedule("${randomSeconds} 57 23 1/1 * ? *", getRainToday)		// capture today's rainfall just before midnight
-//        runIn( 30, getRainToday )
         writeSettings()
         note("schedule", "${app.label} schedule set to start at ${startTimeString()}", "w")
     }
@@ -1069,15 +1070,12 @@ def cycleLoop(i)
         zone++  
     }
 	if (soilString) {
-    	soilString = "Moisture Sensors:\n" + soilString
-        note("moisture", "${soilString}","m")
+        note('moisture', "Moisture Sensors:\n${soilString}",'m')
         }
     if (!runNowMap) return runNowMap
     
     //send settings to Spruce Controller
     switches.settingsMap(timeMap,4002)
-//    def writeTime = now() + 30000
-//	schedule(writeTime, writeCycles)   
 	runIn(30, writeCycles)
     return runNowMap += pumpMap    
 }
@@ -1096,10 +1094,10 @@ def writeCycles(){
         else cycle = cycles(zone)
         //offset by 1, due to pumpdelay @ 1
         cyclesMap."${zone+1}" = "${cycle}"
-        if (zone <= 16) {
-        	state.tpwMap.putAt(zone-1, initTPW(zone))
-            state.dpwMap.putAt(zone-1, initDPW(zone))            
-        }
+//        if (zone <= 16) {
+//        	state.tpwMap.putAt(zone-1, initTPW(zone))
+//            state.dpwMap.putAt(zone-1, initDPW(zone))            
+//        }
         zone++
     }
     switches.settingsMap(cyclesMap, 4001)
@@ -1128,20 +1126,11 @@ def doorClosed(evt){
     runIn(contactDelay * 60, cycleOn)
 }
 
-//days since last run
-//def adddays(){
-//	def i = 0
-//    while(i <= 15){
-//    	state.daycount[i] = state.daycount[i] + 1        
-//        i++
-//    }	
-//}
-
 //Initialize Days per week, based on TPW, perDay and daysAvailable settings
 def initDPW(i){
-	//log.trace "initDPW(${i})"
+	log.debug "initDPW(${i})"
 	
-	def tpw = initTPW(i)
+	def tpw = getTPW(i)		// was initTPW
 	if(tpw > 0) {
     	def dpw
         def perDay = 20
@@ -1152,7 +1141,8 @@ def initDPW(i){
 	    if(dpw == 3 && days && (days.contains('Even') || days.contains('Odd')) && !(days.contains('Even') && days.contains('Odd')))
 			if((tpw.toFloat() / perDay.toFloat()) < 3.0) return 2
 			else return 4
-    	if(daysAvailable() < dpw) return daysAvailable()
+		def daycheck = daysAvailable()
+    	if(daycheck < dpw) return daycheck
     	return dpw
     }
 	return 0
@@ -1182,16 +1172,18 @@ def initTPW(i){
 	
     def zone = i.toInteger()
 	def tpw = 0
+	
 	// Use learned, previous tpw if it is available
 	if(state.tpwMap && settings["sensor${i}"] != null && learn) tpw = state.tpwMap.get(zone-1)
-	// set user time with season adjust	
+	
+	// set user-specified minimum time with seasonal adjust	
     if (settings["minWeek${i}"] != null && settings["minWeek${i}"] != 0) {
     	tpw = Math.round((("${settings["minWeek${i}"]}").toInteger().toFloat() * (seasonAdjust.toFloat() / 100.0))+0.5)
     	} 
-    else if ((tpw == null) || (tpw == 0)) { // use previous calculated tpw
+    else if ((tpw == null) || (tpw == 0)) { // use calculated tpw
     	tpw = Math.round(((plant(i) * nozzle(i)) * (gainAdjust.toFloat() / 100.0) * (seasonAdjust.toFloat() / 100.0)) +0.5)
     	}
-    else log.debug "initTPW: shouldn't be here - minWeek${i} is null"
+    // else log.debug "initTPW: shouldn't be here - minWeek${i} is null"
 
     log.debug "initTPW(${i}) tpw: ${tpw}"
     return tpw
@@ -1200,7 +1192,7 @@ def initTPW(i){
 // Get the current time per week, calls init if not defined
 def getTPW(zone)
 {
-	log.debug "getTPW(${i})"
+	log.debug "getTPW(${zone})"
 	
 	def i = zone.toInteger()
 	if(state.tpwMap) return state.tpwMap.get(i-1)
@@ -1230,11 +1222,6 @@ def moisture(i)
     def yesterday = new Date(now() - (1000 * 60 * 60 * hours).toLong())    
     def lastHumDate = settings["sensor${i}"].latestState("humidity").date
     if (lastHumDate < yesterday) {
-//    def eventsSinceYesterday = (settings["sensor${i}"].eventsSince(yesterday, [max: 50])?.findAll { it.name == "humidity" })
-    //log.debug "there have been ${eventsSinceYesterday.size()} humidity events since yesterday"
-//    if (eventsSinceYesterday.size() < 1){    
-    	//change to seperate warning note?
-        //note("warning", "Please check ${settings["sensor${i}"]}, no humidity reports in the last ${hours} hours", "w")
         return [1, "Please check ${settings["sensor${i}"]}, no humidity reports in the last ${hours} hours\n"]	//change to 1
     }
 
@@ -1257,10 +1244,6 @@ def moisture(i)
     def dpw = getDPW(i)
     def cpd = cycles(i)
     log.debug "moisture: zone: ${i}, tpw: ${tpw}, dpw: ${dpw}, cycles: ${cpd}"
-    
-    //change to daycount NOTE: we aren't using daycount anymore.   
-    //def daycount = 1
-    //if (state.daycount[i-1] > 0) daycount = state.daycount[i-1]    
     
     float diffHum = 0.0
     if (latestHum > 0) diffHum = (spHum.toFloat() - latestHum.toFloat()) / 100.0
@@ -1293,7 +1276,7 @@ def moisture(i)
     	if (newTPW >= 315) note("warning", "Please check ${settings["sensor${i}"]}, Zone ${i} time per week is very high: ${newTPW} mins/week","w")
 
     	state.tpwMap[i-1] = newTPW
-        state.dpwMap[i-1] = initDPW(i)
+        state.dpwMap[i-1] = initDPW(i)		// may need to recalculate days per week
     	moistureSum = "${settings["name${i}"]}, Watering: ${settings["sensor${i}"]} reads ${latestHum}%, SP is ${spHum}%, time adjusted by ${tpwAdjust} mins to ${newTPW} mins/week\n"
     	return [1, moistureSum]
     }
@@ -1312,7 +1295,7 @@ def moisture(i)
 		}
         if (state.tpwMap[i-1] != newTPW) {	// are we changing the tpw?
         	state.tpwMap[i-1] = newTPW
-        	state.dpwMap[i-1] = initDPW(i)
+        	state.dpwMap[i-1] = initDPW(i)	// may need to recalculate days per week
     		moistureSum = "${settings["name${i}"]}, Skipping: ${settings["sensor${i}"]} reads ${latestHum}% SP is ${spHum}%, time adjusted by ${tpwAdjust} mins to ${newTPW} mins/week\n"
         } else {							// not changing tpw
         	moistureSum = "${settings["name${i}"]}, Skipping: ${settings["sensor${i}"]} reads ${latestHum}%, SP is ${spHum}% (no time adjustment, ${tpw} mins/week)\n"
@@ -1517,7 +1500,7 @@ def getRainToday() {
    			note("warning", "Check Zipcode setting, error:\n${wdata.response.error.type}: ${wdata.response.error.description}" , "w")
 		} else {
 			float TRain = 0.0
-			if (wdata.current_observation.precip_today_in.isNumber()) {
+			if (wdata.current_observation.precip_today_in.isNumber()) { // WU can return "t" for "Trace" - we'll assume that means 0.0
             	TRain = wdata.current_observation.precip_today_in.toFloat()
 				if (TRain > 25.0) TRain = 25.0
                 log.debug "getRainToday: ${wdata.current_observation.precip_today_in} / ${TRain}"
