@@ -1529,6 +1529,9 @@ def getRainToday() {
 
 //check weather
 def isWeather(){
+	
+	if (!isRain && !isSeason) return false		// no need to do any of this	
+	
     def wzipcode = "${zipString()}"   
    	log.debug "weather ${wzipcode}"   
     //seasonal q factor
@@ -1548,73 +1551,74 @@ def isWeather(){
     	note("warning", "Check Zipcode setting, error: null" , "w")
     	return false
     }
-    // Forecast rain
-	if (!wdata.response.features.containsKey('forecast10day') || (wdata.response.features.forecast10day.toInteger() != 1) || (wdata.forecast == null)) {
-    	log.debug "Unable to get weather forecast."
-//    	note("warning", "Unable to get weather forecast.", "w")
-    	return false
-    }
-    def qpf = wdata.forecast.simpleforecast.forecastday.qpf_allday.in	// was .mm      
+    
     float qpfTodayIn = 0.0
-    if (qpf.get(0).isNumber()) qpfTodayIn = qpf.get(0).toFloat() 		// Math.round(qpf.get(0).toInteger() /25.4 * 100) /100    
     float qpfTomIn = 0.0
-    if (qpf.get(1).isNumber()) qpfTomIn = qpf.get(1).toFloat() 			// Math.round(qpf.get(1).toInteger() /25.4 * 100) /100    
+    float TRain = 0.0
+    float YRain = 0.0
+    float weeklyRain = 0.0
     
-    // current conditions
-	if (!wdata.response.features.containsKey('conditions') || (wdata.response.features.conditions.toInteger() != 1) || (wdata.current_observation == null)) {
-    	log.debug "Unable to get current weather conditions."
-//    	note("warning", "Unable to get current weather conditions.", "w")
-    	return false
-    }
+    if (isRain) {
+    	// Forecast rain
+		if (!wdata.response.features.containsKey('forecast10day') || (wdata.response.features.forecast10day.toInteger() != 1) || (wdata.forecast == null)) {
+    		log.debug "Unable to get weather forecast."
+    		return false
+    	}
+    	def qpf = wdata.forecast.simpleforecast.forecastday.qpf_allday.in	// was .mm      
+    	if (qpf.get(0).isNumber()) qpfTodayIn = qpf.get(0).toFloat() 		// Math.round(qpf.get(0).toInteger() /25.4 * 100) /100    
+    	if (qpf.get(1).isNumber()) qpfTomIn = qpf.get(1).toFloat() 			// Math.round(qpf.get(1).toInteger() /25.4 * 100) /100    
+    
+    	// current conditions
+		if (!wdata.response.features.containsKey('conditions') || (wdata.response.features.conditions.toInteger() != 1) || (wdata.current_observation == null)) {
+    		log.debug "Unable to get current weather conditions."
+    		return false
+    	}
+    
+		if (wdata.current_observation.precip_today_in.isNumber()) {
+       		TRain = wdata.current_observation.precip_today_in.toFloat()
+    	}
 
-	float TRain = 0.0
-	if (wdata.current_observation.precip_today_in.isNumber()) {
-       	TRain = wdata.current_observation.precip_today_in.toFloat()
-//		log.debug "getRainToday: ${wdata.current_observation.precip_today_in} / ${TRain}"
-    }
-
-    // reported rain
-    def day = getWeekDay()
-    float YRain = state.Rain.get(day - 1).toFloat()
+    	// reported rain
+    	def day = getWeekDay()
+    	YRain = state.Rain.get(day - 1).toFloat()
     
-    if (TRain > qpfTodayIn) qpfTodayIn = TRain	// already have more rain than forecast    
-    log.debug "TRain ${TRain} qpfTodayIn ${qpfTodayIn}, YRain ${YRain}"
-    //state.Rain = [S,M,T,W,T,F,S]
-    //state.Rain = [0,0.43,3,0,0,0,0]
+    	if (TRain > qpfTodayIn) qpfTodayIn = TRain	// already have more rain than forecast    
+    	log.debug "TRain ${TRain} qpfTodayIn ${qpfTodayIn}, YRain ${YRain}"
     
-    def i = 0
-    float weeklyRain = 0
-    while (i <= 6){
-    	def factor = 0
-        if ((day - i) > 0) factor = day - i
-        else factor =  day + 7 - i
-        def getrain = state.Rain.get(i)
-    	weeklyRain += getrain.toFloat() / factor
-    	i++
+    	int i = 0
+		while (i <= 6){
+    		def factor = 0
+        	if ((day - i) > 0) factor = day - i
+        	else factor =  day + 7 - i
+        	def getrain = state.Rain.get(i)
+    		if (factor != 0) weeklyRain += getrain.toFloat() / factor
+    		i++
+    	}
+    	log.debug "weeklyRain ${weeklyRain}"
     }
-//    weeklyRain = Math.round(weeklyRain)
-    log.debug "weeklyRain ${weeklyRain}"
-    //note("season", "weeklyRain ${weeklyRain} ${state.Rain}", "d")
            
-    //get highs
-    def getHigh = wdata.forecast.simpleforecast.forecastday.high.fahrenheit
-    def avgHigh = Math.round((getHigh.get(0).toInteger() + getHigh.get(1).toInteger() + getHigh.get(2).toInteger() + getHigh.get(3).toInteger() + getHigh.get(4).toInteger())/5)    
-    
     // build report
     def city = wzipcode
 	if (wdata.response.features.containsKey('geolookup') && (wdata.response.features.geolookup.toInteger() == 1) && (wdata.location != null)) {
     	city = wdata.location.city
     }
-    def weatherString = "${city} weather\n Today: ${getHigh.get(0)}F,  ${qpfTodayIn}in rain\n Tomorrow: ${getHigh.get(1)}F,  ${qpfTomIn}in rain\n Yesterday:  ${YRain}in rain "
+        	//get highs
+   	def getHigh = wdata.forecast.simpleforecast.forecastday.high.fahrenheit
+    def weatherString = "${city} weather\n Today: ${getHigh.get(0)}F"
+    if (isRain) weatherString += ",  ${qpfTodayIn}in rain"
+    weatherString += "\n Tomorrow: ${getHigh.get(1)}F"
+    if (isRain) weatherString += ",  ${qpfTomIn}in rain\n Yesterday: ${YRain}in rain"
     
     if (isSeason)
-    {        
+    {   
+    	def avgHigh = Math.round((getHigh.get(0).toInteger() + getHigh.get(1).toInteger() + getHigh.get(2).toInteger() + getHigh.get(3).toInteger() + getHigh.get(4).toInteger())/5)    
+    
         //daily adjust
         state.seasonAdj = Math.round((getHigh.get(0).toFloat()/avgHigh.toFloat()) * 100.0)        
         weatherString += "\n Adjusted ${state.seasonAdj - 100}% for Today"
         
         // Apply seasonal adjustment on Monday each week or at install
-        if(getWeekDay() == 1 || state.weekseasonAdj == 0) {
+        if ((getWeekDay() == 1) || (state.weekseasonAdj == 0)) {
             
             //get humidity
             //def gethum = sdata.forecast.simpleforecast.forecastday.avehumidity
@@ -1638,7 +1642,6 @@ def isWeather(){
             	setSeason()
             } else {
             	log.debug "Unable to get sunrise/set for today."
-//            	note("warning", "Unable to get sunrise/set for today.", "w")
             }
         }
     }
