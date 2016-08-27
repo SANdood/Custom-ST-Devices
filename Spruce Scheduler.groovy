@@ -917,13 +917,11 @@ def busyOff(evt){
 //run check every day
 def preCheck(){	
     if (!isDay()) {
-//		adddays()
 		log.debug "Skipping: ${app.label} is not scheduled for today."		// Silent - no note
 		return
 	}
 	if (!busy()) {    	
-        note("active", "${app.label} starting pre-check.", "d")
-//        adddays()
+        note('active', "${app.label} starting pre-check.", 'd')
 	   	state.run = true
        	if (!isWeather()) checkRunMap()
        	else {
@@ -940,7 +938,7 @@ def cycleOn(){
             
     if (sync != null && ( !sync.currentValue('switch').contains('off') || sync.currentValue('status').contains('active') || sync.currentValue('status').contains('pause') || sync.currentValue('status').contains('season') ) ){
         subscribe sync, "switch.off", syncOn
-        note("pause", "waiting for $sync to complete before starting schedule", "w")
+        note('pause', 'Waiting for $sync to complete before starting schedule', 'w')
     }
     else if (contact == null || !contact.currentValue('contact').contains('open')) {
     	subscribe switches, "switch.off", cycleOff
@@ -949,7 +947,7 @@ def cycleOn(){
        	}
     else {
     	subscribe switches, "switch.off", cycleOff
-        note("pause", "$contact opened $switches paused watering", "w")
+        note('pause', "$contact opened, $switches paused watering", "w")
     }
 }
  
@@ -960,7 +958,7 @@ def cycleOff(evt){
     unsubscribe(switches)    
     if (enableManual) subscribe(switches, "switch.programOn", manualStart)
     if (contact == null || !contact.currentValue('contact').contains('open')){    
-    	note("finished", "finished watering for today", "d")
+    	note('finished', 'Finished watering for today', 'd')
     }    
 }
 
@@ -991,12 +989,12 @@ def checkRunMap(){
         state.run = true            
         runIn(60, cycleOn)			// start water
         runNowMap = "${app.label} water will begin in 1 minute:\n" + runNowMap
-        note("active", "${runNowMap}", "d")
+        note('active', "${runNowMap}", 'd')
     }
     else {
         state.run = false 
         switches.programOff()                   
-        note("skipping", "No watering today.", "d")
+        note('skipping', 'No watering today.', 'd')
     }
      
 }
@@ -1005,7 +1003,7 @@ def checkRunMap(){
 //get todays schedule
 def cycleLoop(i)
 {
-    def zone = 1
+    int zone = 1
     def cyc = 0
     def rtime = 0
     def timeMap = [:]
@@ -1019,67 +1017,64 @@ def cycleLoop(i)
         //change to tpw(?)
         if( settings["zone${zone}"] != null && settings["zone${zone}"] != 'Off' && nozzle(zone) != 4 && zoneActive(zone.toString()) )
         {
-		  // First check if we run this zone today, use either dpwMap or even/odd date
-		  def dpw = getDPW(zone)          
-          def runToday = 0
-          if (days && (days.contains('Even') || days.contains('Odd'))) {
-            def daynum = new Date().format("dd", location.timeZone)
-            int dayint = Integer.parseInt(daynum)
-            if(days.contains('Odd') && (dayint +1) % Math.round(31 / (dpw * 4)) == 0) runToday = 1
-          	if(days.contains('Even') && dayint % Math.round(31 / (dpw * 4)) == 0) runToday = 1
-          } else {
-            def weekDay = getWeekDay()-1
-            def dpwMap = getDPWDays(dpw)
-            def today = dpwMap[weekDay]
-            log.debug "Zone: ${zone} dpw: ${dpw} weekDay: ${weekDay} dpwMap: ${dpwMap} today: ${today}"
-            runToday = dpwMap[weekDay]	//1 or 0
-          }         
-          //if no learn check moisture sensors on available days
-          //if (!learn && (settings["sensor${zone}"] != null) ) runToday = 1
-          if (settings["sensor${zone}"] != null) runToday = 1
+		  	// First check if we run this zone today, use either dpwMap or even/odd date
+		  	def dpw = getDPW(zone)          
+          	def runToday = 0
+          	if (days && (days.contains('Even') || days.contains('Odd'))) {
+            	def daynum = new Date().format("dd", location.timeZone)
+            	int dayint = Integer.parseInt(daynum)
+        		if(days.contains('Odd') && (dayint +1) % Math.round(31 / (dpw * 4)) == 0) runToday = 1
+          		if(days.contains('Even') && dayint % Math.round(31 / (dpw * 4)) == 0) runToday = 1
+          	} else {
+            	def weekDay = getWeekDay()-1
+            	def dpwMap = getDPWDays(dpw)
+            	def today = dpwMap[weekDay]
+            	log.debug "Zone: ${zone} dpw: ${dpw} weekDay: ${weekDay} dpwMap: ${dpwMap} today: ${today}"
+            	runToday = dpwMap[weekDay]	//1 or 0
+          	}         
+          	//if no learn check moisture sensors on available days
+          	//if (!learn && (settings["sensor${zone}"] != null) ) runToday = 1
+          	if (settings["sensor${zone}"] != null) runToday = 1
           
-          //manual=0 force run
-          if (i == 0) runToday = 1
+          	//manual=0 force run
+          	if (i == 0) runToday = 1
           
-          if(runToday) 
-          {
-			def soil
-            if (i == 0) soil = moisture(0)
-            else soil = moisture(zone)
-          	soilString += "${soil[1]}"
+          	if(runToday) 
+          	{
+				def soil
+            	if (i == 0) soil = moisture(0)
+            	else soil = moisture(zone)
+          		soilString += "${soil[1]}"
 
-			// Run this zone if soil moisture needed or if it is a weekly
-            // We run at least once a week and let moisture lower the time if needed
-            if ( (soil[0] == 1 ) /* || (learn && dpw == 1) */)
+				// Run this zone if soil moisture needed 
+            	if ( soil[0] == 1 )
             	{
-                //state.daycount[zone-1] = 0
-                cyc = cycles(zone)
-                dpw = getDPW(zone)
-                rtime = calcRunTime(getTPW(zone), dpw)                
-                //daily weather adjust if no sensor
-                if(isSeason && (settings["sensor${zone}"] == null || !learn)) rtime = Math.round(((rtime.toFloat() / cyc.toFloat()) * (state.seasonAdj.toFloat() / 100.0))+0.5)
-                // runTime is total run time devided by num cycles
-                else rtime = Math.round((rtime.toFloat() / cyc.toFloat()) + 0.5) 			// round up instead of down (e.g., 23 / 2 = 12, not 11)                 
-                runNowMap += "${settings["name${zone}"]}: ${cyc} x ${rtime} min\n"
-                log.debug"Zone ${zone} Map: ${cyc} x ${rtime} min"
+                	cyc = cycles(zone)
+                	def tpw = getTPW(zone)
+                	dpw = getDPW(zone)					// moisture() may have changed DPW
+                	rtime = calcRunTime(tpw, dpw)                
+                	//daily weather adjust if no sensor
+                	if(isSeason && (settings["sensor${zone}"] == null || !learn)) rtime = Math.round(((rtime.toFloat() / cyc.toFloat()) * (state.seasonAdj.toFloat() / 100.0))+0.5)
+                	// runTime is total run time devided by num cycles
+                	else rtime = Math.round((rtime.toFloat() / cyc.toFloat()) + 0.5) 			// round up instead of down (e.g., 23 / 2 = 12, not 11)                 
+                	runNowMap += "${settings["name${zone}"]}: ${cyc} x ${rtime} min\n"
+                	log.debug"Zone ${zone} Map: ${cyc} x ${rtime} min"
             	}
         	}
 		}
-        //else state.daycount[zone-1] = 0  // Zone isn't scheduled
+
         if (nozzle(zone) == 4) pumpMap += "${settings["name${zone}"]}: ${settings["zone${zone}"]} on\n"
         timeMap."${zone+1}" = "${rtime}"
         zone++  
     }
 	if (soilString) {
         note('moisture', "Moisture Sensors:\n${soilString}",'m')
-
         }
+        
     if (!runNowMap) return runNowMap
     
     //send settings to Spruce Controller
     switches.settingsMap(timeMap,4002)
-
-
 	runIn(30, writeCycles)
     return runNowMap += pumpMap    
 }
