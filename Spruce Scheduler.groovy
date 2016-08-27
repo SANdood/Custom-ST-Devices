@@ -1093,11 +1093,6 @@ def writeCycles(){
         else cycle = cycles(zone)
         //offset by 1, due to pumpdelay @ 1
         cyclesMap."${zone+1}" = "${cycle}"
-//        if (zone <= 16) {
-//        	state.tpwMap.putAt(zone-1, initTPW(zone))
-//            state.dpwMap.putAt(zone-1, initDPW(zone))            
-//        }
-
         zone++
     }
     switches.settingsMap(cyclesMap, 4001)
@@ -1182,7 +1177,7 @@ def initTPW(i){
     	tpw = Math.round((("${settings["minWeek${i}"]}").toInteger().toFloat() * (seasonAdjust.toFloat() / 100.0))+0.5)
     	} 
     else if ((tpw == null) || (tpw == 0)) { // use calculated tpw
-    	tpw = Math.round(((plant(i) * nozzle(i)) * (gainAdjust.toFloat() / 100.0) * (seasonAdjust.toFloat() / 100.0)) +0.5)
+    	tpw = Math.round(((plant(i) * nozzle(i).toFloat()) * (gainAdjust.toFloat() / 100.0) * (seasonAdjust.toFloat() / 100.0)) +0.5)
     	}
     // else log.debug "initTPW: shouldn't be here - minWeek${i} is null"
 	state.tpwMap.putAt(zone-1, tpw)
@@ -1193,8 +1188,7 @@ def initTPW(i){
 // Get the current time per week, calls init if not defined
 def getTPW(zone)
 {
-	log.debug "getTPW(${zone})"
-	
+	// log.debug "getTPW(${zone})"
 	def i = zone.toInteger()
 	if(state.tpwMap) return state.tpwMap.get(i-1)
 	return initTPW(i)
@@ -1204,9 +1198,7 @@ def getTPW(zone)
 def calcRunTime(tpw, dpw)
 {           
     def duration = 0
-    if(tpw > 0 && dpw > 0) {
-        duration = Math.round(tpw.toFloat() / dpw.toFloat())
-    }
+    if((tpw > 0) && (dpw > 0)) duration = Math.round(tpw.toFloat() / dpw.toFloat())
     return duration
 }
 
@@ -1222,16 +1214,9 @@ def moisture(i)
     def hours = 48
     def yesterday = new Date(now() - (1000 * 60 * 60 * hours).toLong())    
     def lastHumDate = settings["sensor${i}"].latestState("humidity").date
-    if (lastHumDate < yesterday) {
+    if (lastHumDate < yesterday) return [1, "Please check ${settings["sensor${i}"]}, no humidity reports in the last ${hours} hours\n"]
 
-
-
-
-
-        return [1, "Please check ${settings["sensor${i}"]}, no humidity reports in the last ${hours} hours\n"]	//change to 1
-    }
-
-    def latestHum = settings["sensor${i}"].latestValue("humidity")
+    def latestHum = settings["sensor${i}"].latestValue("humidity")	// state = 29, value = 29.13
     def spHum = getDrySp(i).toInteger()
     if (!learn)
     {
@@ -1245,16 +1230,15 @@ def moisture(i)
         }
     }
 
-    //learn mode
+    //in Adaptive/learn mode
     def tpw = getTPW(i)
     def dpw = getDPW(i)
     def cpd = cycles(i)
+    float tpwFloat = tpw.toFloat()
+	float dpwFloat = dpw.toFloat()
+	float cpdFloat = cpd.toFloat()
     log.debug "moisture: zone: ${i}, tpw: ${tpw}, dpw: ${dpw}, cycles: ${cpd}"
     
-
-
-
-
     float diffHum = 0.0
     if (latestHum > 0) diffHum = (spHum.toFloat() - latestHum.toFloat()) / 100.0
     else {
@@ -1263,15 +1247,15 @@ def moisture(i)
     }
 	
 	def minimum = cpd * dpw
-	def tpwAdjust = 0	
-    if (diffHum > 0.01) { // we won't adjust tpw if we are within +/-1% of target
-  		tpwAdjust = Math.round(((tpw.toFloat() * diffHum) + 0.5) * dpw.toFloat() * cpd.toFloat())	// Compute adjustment as a function of the current tpw
-  		if (tpwAdjust > (tpw.toFloat()*0.5)) tpwAdjust = Math.round((tpw.toFloat()*0.5)+0.5) 		// limit fast rise to 50% of tpw per day
+	def tpwAdjust = 0
+    if (diffHum > 0.01) { 				// only adjust tpw if more than 1% of target SP
+  		tpwAdjust = Math.round(((tpwFloat * diffHum) + 0.5) * dpwFloat * cpdFloat	// Compute adjustment as a function of the current tpw
+  		if (tpwAdjust > (tpwFloat * 0.5)) tpwAdjust = Math.round((tpwFloat * 0.5) + 0.5) 		// limit fast rise to 50% of tpw per day
 		if (tpwAdjust < minimum) tpwAdjust = minimum      // but we need to move at least 1 minute per cycle per day to actually increase the watering time
     } else if (diffHum < -0.01) {
     	if (diffHum < -0.05) diffHum = -0.05			// try not to over-compensate for a heavy rainstorm...
-    	tpwAdjust = Math.round(((tpw.toFloat() * diffHum) - 0.5) * dpw.toFloat() * cpd.toFloat())
-    	if (tpwAdjust < (tpw.toFloat()*-0.20)) tpwAdjust = Math.round((tpw.toFloat()*-0.20)-0.5)	// limit slow decay to 20% of tpw per day
+    	tpwAdjust = Math.round(((tpwFloat * diffHum) - 0.5) * dpwFloat * cpdFloat)
+    	if (tpwAdjust < (tpwFloat * -0.20)) tpwAdjust = Math.round((tpwFloat * -0.20) - 0.5)	// limit slow decay to 20% of tpw per day
 		if (tpwAdjust > (-1 * minimum)) tpwAdjust = -1 * minimum // but we need to move at least 1 minute per cycle per day to actually increase the watering time
     }
     log.debug "moisture(${i}): diffHum: ${diffHum}, tpwAdjust: ${tpwAdjust}"
@@ -1283,7 +1267,7 @@ def moisture(i)
     	
     	def maxTPW = dpw * 60 * 2				// arbitrary maximum of 2 hours per scheduled watering days/week
     	if (newTPW > maxTPW) newTPW = maxTPW		
-    	if (newTPW >= 315) note("warning", "Please check ${settings["sensor${i}"]}, Zone ${i} time per week is very high: ${newTPW} mins/week","w")
+    	if (newTPW >= (maxTPW/2))) note("warning", "Please check ${settings["sensor${i}"]}, Zone ${i} time per week is very high: ${newTPW} mins/week","w")
 
     	state.tpwMap[i-1] = newTPW
         state.dpwMap[i-1] = initDPW(i)		// may need to recalculate days per week
@@ -1324,11 +1308,8 @@ def moisture(i)
 
 //get moisture SP
 def getDrySp(i){
-//    if(!state.setMoisture) state.setMoisture = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
-//    log.debug "Moisture SP ${state.setMoisture.get(i.toInteger()-1)}"
     if ("${settings["sensorSp${i}"]}" != "null") return "${settings["sensorSp${i}"]}"  
     else if (settings["plant${i}"] == "New Plants") return 40    
-//    else if (state.setMoisture.get(i.toInteger()-1) != 0) return state.setMoisture.get(i.toInteger()-1)
     else{
         switch (settings["option${i}"]) {
             case "Sand":
@@ -1364,11 +1345,9 @@ def note(status, message, type){
 
 def send(msg) {
 	if (location.contactBookEnabled && recipients) {
-//    	log.info ( "Sending '${msg}' to selected contacts..." )                
 		sendNotificationToContacts(msg, recipients, [event: true]) 
     }
     else {
-//		log.info ( "Sending Push Notification '${msg}'..." )        
 		sendPush( msg )
       }
 }
@@ -1399,15 +1378,15 @@ def nozzle(i){
     def getT = settings["zone${i}"]    
     if (!getT) return 0
     switch(getT) {        
-        case "Spray":
+        case 'Spray':
             return 1
-        case "Rotor":
+        case 'Rotor':
             return 1.4
-        case "Drip":
+        case 'Drip':
             return 2.4
-        case "Master Valve":
+        case 'Master Valve':
             return 4
-        case "Pump":
+        case 'Pump':
             return 4
         default:
             return 0
@@ -1419,19 +1398,19 @@ def plant(i){
     def getP = settings["plant${i}"]    
     if(!getP) return 0
     switch(getP) {
-        case "Lawn":
+        case 'Lawn':
             return 60
-        case "Garden":
+        case 'Garden':
             return 50
-        case "Flowers":
+        case 'Flowers':
             return 40
-        case "Shrubs":
+        case 'Shrubs':
             return 30
-        case "Trees":
+        case 'Trees':
             return 20
-        case "Xeriscape":
+        case 'Xeriscape':
             return 30
-        case "New Plants":
+        case 'New Plants':
             return 80
         default:
             return 0
@@ -1443,17 +1422,17 @@ def cycles(i){
     def getC = settings["option${i}"]    
     if(!getC) return 2
     switch(getC) {
-        case "Slope":
+        case 'Slope':
             return 3
-        case "Sand":
+        case 'Sand':
             return 1
-        case "Clay":
+        case 'Clay':
             return 2
-        case "No Cycle":
+        case 'No Cycle':
             return 1
-        case "Cycle 2x":
+        case 'Cycle 2x':
             return 2
-        case "Cycle 3x":
+        case 'Cycle 3x':
             return 3   
         default:
             return 2
@@ -1462,7 +1441,7 @@ def cycles(i){
  
 //check if day is allowed
 def isDay() {    
-    log.debug "day check"
+    // log.debug "day check"
     if ("${settings["days"]}" == "null") return true
      
     def today = new Date().format("EEEE", location.timeZone)    
@@ -1472,8 +1451,8 @@ def isDay() {
     log.debug "today: ${today} ${dayint}, days: ${days}"
      
     if (days.contains(today)) return true
-    if (days.contains("Even") && (dayint % 2 == 0)) return true
-    if (days.contains("Odd") && (dayint % 2 != 0)) return true
+    if (days.contains('Even') && (dayint % 2 == 0)) return true
+    if (days.contains('Odd') && (dayint % 2 != 0)) return true
 
     return false      
 }
