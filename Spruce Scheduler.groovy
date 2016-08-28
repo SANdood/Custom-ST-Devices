@@ -891,20 +891,26 @@ def manualStart(evt){
 
 //is another schedule running
 def busy(){
-	log.debug "Current status: ${switches.currentValue('switch')}"
+	def switchVal = switches.currentValue('switch')
+	def switchStat = switches.currentValue('status')
+	
+	log.debug "${switches.displayName} current value: ${switchVal}, status ${switchStat}"
+	
     if (state.run == true){
     	note("active", "${app.label} already running, skipping additional start", "d")
     	return true
-        }
-    else if (switches.currentValue('switch').contains('off') && !switches.currentValue('status').contains('active') && !switches.currentValue('status').contains('season') && !switches.currentValue('status').contains('pause') && !switches.currentValue('status').contains('moisture')) return false
-    else if (isDay()) {				// Are we supposed to run today?		
-
-    	subscribe switches, "switch.off", busyOff      
-    	note("active", "Another schedule running, waiting to start ${app.label}", "d")
-        return true
-    } else {						// Don't need to do busyOff if not scheduled for today (but I don't think this will ever happen)
-    	log.debug "Another schedule running, but ${app.label} is not scheduled for today anyway."
-    	return true
+    } else {
+    	//if (switches.currentValue('switch').contains('off') && !switches.currentValue('status').contains('active') && !switches.currentValue('status').contains('season') && !switches.currentValue('status').contains('pause') && !switches.currentValue('status').contains('moisture')) return false
+    	if (switchVal.contains('off') && !switchStat.contains('active') && !switchStat.contains('season') && !switchStat.contains('pause') && !switchStat.contains('moisture')) {
+    		return false
+    	} else if (isDay()) {				// Something else is running, but are we even supposed to run today?		
+    		subscribe switches, "switch.off", busyOff      
+    		note("active", "Another schedule running, waiting to start ${app.label}", "d")
+        	return true
+    	} else {						// Don't need to do busyOff if not scheduled for today (but I don't think this will ever happen)
+    		log.debug "Another schedule running, but ${app.label} is not scheduled for today anyway."
+    		return true
+    	}
     }
     return false
 }
@@ -1129,22 +1135,21 @@ def initDPW(i){
 	log.debug "initDPW(${i})"
 	
 	def tpw = getTPW(i)		// was getTPW -does not update times in scheduler without initTPW
-
+	def dpw=0
 	if(tpw > 0) {
-    	def dpw
-        def perDay = 20
-        if(settings["perDay${i}"]) perDay = settings["perDay${i}"].toInteger()
-    	dpw = Math.round((tpw.toFloat() / perDay.toFloat())+0.5)
-    	if(dpw <= 1) return 1
+        float perDay = 20.0
+        if(settings["perDay${i}"]) perDay = settings["perDay${i}"].toFloat()
+    	dpw = Math.round((tpw.toFloat() / perDay)+0.5)
+    	if(dpw <= 1) dpw = 1
 		// 3 days per week not allowed for even or odd day selection
 	    if(dpw == 3 && days && (days.contains('Even') || days.contains('Odd')) && !(days.contains('Even') && days.contains('Odd')))
-			if((tpw.toFloat() / perDay.toFloat()) < 3.0) return 2
+			if((tpw.toFloat() / perDay) < 3.0) return 2
 			else return 4
 		def daycheck = daysAvailable()
-    	if(daycheck < dpw) return daycheck
-    	return dpw
+    	if(daycheck < dpw) dpw = daycheck
     }
-	return 0
+	state.dpwMap.putAt(i-1, dpw)
+    return dpw
 }
 
 // Get current days per week value, calls init if not defined
@@ -1358,7 +1363,8 @@ def send(msg) {
 //days available
 def daysAvailable(){
     int dayCount = 0
-    if("${settings["days"]}" == "null") dayCount = 7
+	if("${settings["days"]}" == "null") dayCount = 7
+
     else if(days){    
 	    if (days.contains('Even') || days.contains('Odd')) {
           dayCount = 4
@@ -1373,6 +1379,7 @@ def daysAvailable(){
         	if (days.contains('Sunday')) dayCount += 1
            }
        }
+    log.debug "daysAvailable -> ${dayCount}, days= ${days}"
     return dayCount
 }    
  
