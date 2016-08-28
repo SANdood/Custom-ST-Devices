@@ -964,10 +964,11 @@ def cycleOff(evt){
 
 //run check each day at scheduled time
 def checkRunMap(){	
+	log.debug "checkRunMap()"
     // Create weekly water summary, if requested, on Sunday	
     if(notify && notify.contains('Weekly') && (getWeekDay() == 3))
     {
-    	def zone = 1
+    	int zone = 1
         def zoneSummary = ""
         while(zone <= 16) {
         	if(settings["zone${zone}"] != null && settings["zone${zone}"] != 'Off' && nozzle(zone) != 4) {
@@ -1003,6 +1004,7 @@ def checkRunMap(){
 //get todays schedule
 def cycleLoop(i)
 {
+	log.debug "cycleLoop(${i})"
     int zone = 1
     def cyc = 0
     def rtime = 0
@@ -1013,6 +1015,7 @@ def cycleLoop(i)
 
     while(zone <= 16)
     {
+    	log.debug "cycleLoop(): Zone ${zone}"
         rtime = 0
         //change to tpw(?)
         if( settings["zone${zone}"] != null && settings["zone${zone}"] != 'Off' && nozzle(zone) != 4 && zoneActive(zone.toString()) )
@@ -1058,7 +1061,7 @@ def cycleLoop(i)
                 	// runTime is total run time devided by num cycles
                 	else rtime = Math.round((rtime.toFloat() / cyc.toFloat()) + 0.5) 			// round up instead of down (e.g., 23 / 2 = 12, not 11)                 
                 	runNowMap += "${settings["name${zone}"]}: ${cyc} x ${rtime} min\n"
-                	log.debug"Zone ${zone} Map: ${cyc} x ${rtime} min"
+                	log.debug "Zone ${zone} Map: ${cyc} x ${rtime} min"
             	}
         	}
 		}
@@ -1166,7 +1169,7 @@ def initTPW(i){
     def seasonAdjust = 100
     if (state.weekseasonAdj && isSeason && settings["plant${i}"] != "New Plants") seasonAdjust = state.weekseasonAdj    
 	
-    def zone = i.toInteger()
+    int zone = i.toInteger()
 	def tpw = 0
 	
 	// Use learned, previous tpw if it is available
@@ -1179,7 +1182,7 @@ def initTPW(i){
     else if ((tpw == null) || (tpw == 0)) { // use calculated tpw
     	tpw = Math.round(((plant(i) * nozzle(i).toFloat()) * (gainAdjust.toFloat() / 100.0) * (seasonAdjust.toFloat() / 100.0)) +0.5)
     	}
-    // else log.debug "initTPW: shouldn't be here - minWeek${i} is null"
+
 	state.tpwMap.putAt(zone-1, tpw)
     log.debug "initTPW(${i}) tpw: ${tpw}"
     return tpw
