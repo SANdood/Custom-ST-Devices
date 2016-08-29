@@ -1134,8 +1134,9 @@ def doorClosed(evt){
 def initDPW(i){
 	log.debug "initDPW(${i})"
 	
-	def tpw = getTPW(i)		// was getTPW -does not update times in scheduler without initTPW
-	def dpw=0
+	int zone = i.toInteger()
+	def tpw = getTPW(zone)		// was getTPW -does not update times in scheduler without initTPW
+	int dpw = 0
 	if(tpw > 0) {
         float perDay = 20.0
         if(settings["perDay${i}"]) perDay = settings["perDay${i}"].toFloat()
@@ -1143,12 +1144,12 @@ def initDPW(i){
     	if(dpw <= 1) dpw = 1
 		// 3 days per week not allowed for even or odd day selection
 	    if(dpw == 3 && days && (days.contains('Even') || days.contains('Odd')) && !(days.contains('Even') && days.contains('Odd')))
-			if((tpw.toFloat() / perDay) < 3.0) return 2
-			else return 4
-		def daycheck = daysAvailable()
+			if((tpw.toFloat() / perDay) < 3.0) dpw = 2
+			else dpw = 4
+		int daycheck = daysAvailable()
     	if(daycheck < dpw) dpw = daycheck
     }
-	state.dpwMap.putAt(i-1, dpw)
+	state.dpwMap.putAt(zone-1, dpw)
     return dpw
 }
 
@@ -1271,14 +1272,18 @@ def moisture(i)
  
     def newTPW = Math.round(tpw + tpwAdjust)
     if (tpwAdjust > 0) {		// need more water
-    	// Probably should have a maximum tpw, or perhaps a maximum per day
-    	
-    	def maxTPW = dpw * 60 * 2				// arbitrary maximum of 2 hours per scheduled watering days/week
-    	if (newTPW > maxTPW) newTPW = maxTPW		
-    	if (newTPW >= (maxTPW/2)) note("warning", "Please check ${settings["sensor${i}"]}, Zone ${i} time per week is very high: ${newTPW} mins/week","w")
-
+		int perDay = 20
+        if (settings["perDay${i}"]) perDay = settings["perDay${i}"].toInteger()
+        if (perDay < 8) perDay = 8
+  		if (newTPW < perDay) {
+  			newTPW = perDay	// arbitrary minimum if we're adjusting up from a small number
+  		} else {
+    		def maxTPW = dpw * 60 * 2				// arbitrary maximum of 2 hours per scheduled watering days/week
+    		if (newTPW > maxTPW) newTPW = maxTPW	// initDPW() below may spread this across more days		
+    		if (newTPW >= (maxTPW/2)) note("warning", "Please check ${settings["sensor${i}"]}, Zone ${i} time per week seems high: ${newTPW} mins/week","w")
+  		}
     	state.tpwMap[i-1] = newTPW
-        state.dpwMap[i-1] = initDPW(i)		// may need to recalculate days per week
+        state.dpwMap[i-1] = initDPW(i)		// call initDPW not getDPW because it may need to recalculate days per week
     	moistureSum = "${settings["name${i}"]}, Watering: ${settings["sensor${i}"]} reads ${latestHum}%, SP is ${spHum}%, time adjusted by ${tpwAdjust} mins to ${newTPW} mins/week\n"
     	return [1, moistureSum]
     }
