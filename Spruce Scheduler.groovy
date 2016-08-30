@@ -942,9 +942,12 @@ def cycleOn(){
     unschedule(cycleOn)
     unsubscribe()    
             
-    if (sync != null && ( !sync.currentValue('switch').contains('off') || sync.currentValue('status').contains('active') || sync.currentValue('status').contains('pause') || sync.currentValue('status').contains('season') ) ){
+    if (sync != null ) {
+    	syncSwitch = sync.currentValue('switch')
+    	syncStatus = sync.currentValue('status')
+    	if ( !syncSwitch.contains('off') || syncStatus.contains('active') || syncStatus.contains('pause') || syncStatus.contains('season') ) {
         subscribe sync, "switch.off", syncOn
-        note('pause', 'Waiting for $sync to complete before starting schedule', 'w')
+        note('pause', 'Waiting for ${sync} to complete before starting schedule', 'w')
     }
     else if (contact == null || !contact.currentValue('contact').contains('open')) {
     	subscribe switches, "switch.off", cycleOff
@@ -953,7 +956,7 @@ def cycleOn(){
        	}
     else {
     	subscribe switches, "switch.off", cycleOff
-        note('pause', "$contact opened, $switches paused watering", "w")
+        note('pause', "${contact} opened, ${switches} paused watering", "w")
     }
 }
  
@@ -975,11 +978,11 @@ def checkRunMap(){
     if(notify && notify.contains('Weekly') && (getWeekDay() == 3))
     {
     	int zone = 1
-        def zoneSummary = ""
+        String zoneSummary = ""
         while(zone <= 16) {
         	if(settings["zone${zone}"] != null && settings["zone${zone}"] != 'Off' && nozzle(zone) != 4) {
-               def sum = getaZoneSummary(zone)
-			   zoneSummary = "${zoneSummary} ${sum}"
+               String sum = getaZoneSummary(zone)
+			   zoneSummary += sum
             }
             zone++
         }
@@ -1017,11 +1020,13 @@ def cycleLoop(i)
     def timeMap = [:]
     def pumpMap = ""
     def runNowMap = ""
-    def soilString = ""    
+    def soilString = ""
+    def totalCycles = 0
+    def totalTime = 0
 
     while(zone <= 16)
     {
-    	log.debug "cycleLoop(): Zone ${zone}"
+    	//log.debug "cycleLoop(): Zone ${zone}"
         rtime = 0
         //change to tpw(?)
         if( settings["zone${zone}"] != null && settings["zone${zone}"] != 'Off' && nozzle(zone) != 4 && zoneActive(zone.toString()) )
@@ -1066,6 +1071,8 @@ def cycleLoop(i)
                 	if(isSeason && (settings["sensor${zone}"] == null || !learn)) rtime = Math.round(((rtime.toFloat() / cyc.toFloat()) * (state.seasonAdj.toFloat() / 100.0))+0.5)
                 	// runTime is total run time devided by num cycles
                 	else rtime = Math.round((rtime.toFloat() / cyc.toFloat()) + 0.5) 			// round up instead of down (e.g., 23 / 2 = 12, not 11)                 
+					totalCycles += cyc
+					totalTime += (rtime * cyc)
                 	runNowMap += "${settings["name${zone}"]}: ${cyc} x ${rtime} min\n"
                 	log.debug "Zone ${zone} Map: ${cyc} x ${rtime} min"
             	}
@@ -1081,6 +1088,10 @@ def cycleLoop(i)
         }
         
     if (!runNowMap) return runNowMap
+    
+    totalTime += pumpDelayString.toInteger() * (totalCycles - 1)  // add in the inter-zone pump delays delays
+    def finishTime = new Date(now() + (60000 totalTime).toLong()) 
+    note ( 'moisture', "Schedule run time: ${totalTime} min, expected completion ${finishTime}.", 'w')
     
     //send settings to Spruce Controller
     switches.settingsMap(timeMap,4002)
@@ -1356,7 +1367,10 @@ def note(status, message, type){
       }
       if (notify.contains('Moisture') && type == "m"){        
         send(message)
-      }      
+      }
+      if (notify.contains('Info') && type == 'i'){
+      	send(message)
+      }
     }
 }
 
