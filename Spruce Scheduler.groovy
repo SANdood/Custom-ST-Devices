@@ -1140,7 +1140,7 @@ def initDPW(i){
 	if(tpw > 0) {
         float perDay = 20.0
         if(settings["perDay${i}"]) perDay = settings["perDay${i}"].toFloat()
-    	dpw = Math.round((tpw.toFloat() / perDay)+0.5)
+    	dpw = Math.round(tpw.toFloat() / perDay)
     	if(dpw <= 1) dpw = 1
 		// 3 days per week not allowed for even or odd day selection
 	    if(dpw == 3 && days && (days.contains('Even') || days.contains('Odd')) && !(days.contains('Even') && days.contains('Odd')))
@@ -1179,14 +1179,17 @@ def initTPW(i){
 	def tpw = 0
 	
 	// Use learned, previous tpw if it is available
-	if(state.tpwMap && settings["sensor${i}"] != null && learn) tpw = state.tpwMap.get(zone-1)
+	if ( settings["sensor${i}"] != null ) {
+		seasonAdjust = 100.0 			// no seasonAdjust if this zone uses a sensor
+		if(state.tpwMap && learn) tpw = state.tpwMap.get(zone-1)
+	}
 	
 	// set user-specified minimum time with seasonal adjust	
     if (settings["minWeek${i}"] != null && settings["minWeek${i}"] != 0) {
-    	tpw = Math.round((("${settings["minWeek${i}"]}").toInteger().toFloat() * (seasonAdjust.toFloat() / 100.0))+0.5)
+    	tpw = Math.round(("${settings["minWeek${i}"]}").toFloat() * (seasonAdjust.toFloat() / 100.0))
     	} 
     else if ((tpw == null) || (tpw == 0)) { // use calculated tpw
-    	tpw = Math.round(((plant(i) * nozzle(i).toFloat()) * (gainAdjust.toFloat() / 100.0) * (seasonAdjust.toFloat() / 100.0)) +0.5)
+    	tpw = Math.round((plant(i) * nozzle(i).toFloat()) * (gainAdjust.toFloat() / 100.0) * (seasonAdjust.toFloat() / 100.0))
     	}
 
 	state.tpwMap.putAt(zone-1, tpw)
@@ -1212,7 +1215,7 @@ def calcRunTime(tpw, dpw)
 }
 
 // Check the moisture level of a zone returning dry (1) or wet (0) and adjust tpw if overly dry/wet
-def moisture(i)
+def moisture(int i)
 {
 	// No Sensor on this zone or manual start skips moisture check
 	if(settings["sensor${i}"] == null || i == 0) {     
@@ -1255,7 +1258,7 @@ def moisture(i)
     	note("warning", "Please check sensor ${settings["sensor${i}"]}, it is currently reading 0%", "w")
     }
 	
-	def minimum = cpd * dpw
+	def minimum = cpd * dpw				// minimum of 1 minute per scheduled days per week (note - can be 1*1=1)
 	def tpwAdjust = 0
     if (diffHum > 0.01) { 				// only adjust tpw if more than 1% of target SP
   		tpwAdjust = Math.round((tpwFloat * diffHum) + 0.5) * dpwFloat * cpdFloat	// Compute adjustment as a function of the current tpw
@@ -1301,9 +1304,10 @@ def moisture(i)
     		note("warning", "Please check ${settings["sensor${i}"]}, Zone ${i} time per week is very low: ${newTPW} mins/week","w")
 		}
         if (state.tpwMap[i-1] != newTPW) {	// are we changing the tpw?
-        	state.tpwMap[i-1] = newTPW
+        	state.tpwMap[i-1] = newTPW		// store the new tpw
         	state.dpwMap[i-1] = initDPW(i)	// may need to recalculate days per week
-    		moistureSum = "${settings["name${i}"]}, Skipping: ${settings["sensor${i}"]} reads ${latestHum}% SP is ${spHum}%, time adjusted by ${tpwAdjust} mins to ${newTPW} mins/week\n"
+        	def adjusted = newTPW - tpw // so that the next note is accurate
+    		moistureSum = "${settings["name${i}"]}, Skipping: ${settings["sensor${i}"]} reads ${latestHum}% SP is ${spHum}%, time adjusted by ${adjusted} mins to ${newTPW} mins/week\n"
         } else {							// not changing tpw
         	moistureSum = "${settings["name${i}"]}, Skipping: ${settings["sensor${i}"]} reads ${latestHum}%, SP is ${spHum}% (no time adjustment, ${tpw} mins/week)\n"
     	}
@@ -1622,7 +1626,8 @@ def isWeather(){
     		}
     		j++
     	}
-    	def avgHigh = Math.round(totalHigh / highs.toFloat())
+    	def avgHigh = highToday
+    	if ( highs > 0 ) avgHigh = Math.round(totalHigh / highs.toFloat())
     	
         //daily adjust
         state.seasonAdj = Math.round((highToday.toFloat()/avgHigh.toFloat()) * 100.0)        
@@ -1701,7 +1706,7 @@ def isWeather(){
     return false    
 }
 
-// false if ANY of this schedule's zones are using sensors
+// true if ANY of this schedule's zones are using sensors
 def anySensors() {
 	def zone=1
 	while (zone <= 16) {
