@@ -772,11 +772,11 @@ def getname(i) {
     else return "Zone $i"
 }
 
-def zipString() {
+private String zipString() {
     if (!zipcode) return "${location.zipCode}"
     //add pws for correct weatherunderground lookup
     if (!zipcode.isNumber()) return "pws:${zipcode}"
-    else return "${zipcode}"
+    else return zipcode
 }
          
 //app install
@@ -943,23 +943,25 @@ def cycleOn(){
     unsubscribe()    
             
     if (sync != null ) {
-    	syncSwitch = sync.currentValue('switch')
-    	syncStatus = sync.currentValue('status')
+    	def syncSwitch = sync.currentValue('switch')
+    	def syncStatus = sync.currentValue('status')
     	if ( !syncSwitch.contains('off') || syncStatus.contains('active') || syncStatus.contains('pause') || syncStatus.contains('season') ) {
-        subscribe sync, "switch.off", syncOn
-        note('pause', 'Waiting for ${sync} to complete before starting schedule', 'w')
+        	subscribe sync, "switch.off", syncOn
+        	note('pause', "Waiting for ${sync} to complete before starting schedule", 'w')
+        	return
+    	}
     }
-    else if (contact == null || !contact.currentValue('contact').contains('open')) {
+    if (contact == null || !contact.currentValue('contact').contains('open')) {
     	subscribe switches, "switch.off", cycleOff
         subscribe contact, "contact.open", doorOpen                
         resume()
-       	}
+    }
     else {
     	subscribe switches, "switch.off", cycleOff
         note('pause', "${contact} opened, ${switches} paused watering", "w")
     }
 }
- 
+
 //when switch reports off, watering program is finished
 def cycleOff(evt){
 	state.run = false    
@@ -1089,9 +1091,9 @@ def cycleLoop(i)
         
     if (!runNowMap) return runNowMap
     
-    totalTime += pumpDelayString.toInteger() * (totalCycles - 1)  // add in the inter-zone pump delays delays
-    def finishTime = new Date(now() + (60000 totalTime).toLong()) 
-    note ( 'moisture', "Schedule run time: ${totalTime} min, expected completion ${finishTime}.", 'w')
+//    totalTime += pumpDelayString.toInteger() * (totalCycles - 1)  // add in the inter-zone pump delays delays
+//    def finishTime = new Date(now() + (60000 * totalTime).toLong()) 
+//    note ( 'moisture', "Schedule run time: ${totalTime} min, expected completion ${finishTime}.", 'w')
     
     //send settings to Spruce Controller
     switches.settingsMap(timeMap,4002)
@@ -1120,12 +1122,13 @@ def writeCycles(){
 }
 
 def resume(){
+	log.debug "resume()"
 	switches.on()    
 }
 
 def syncOn(evt){
     unsubscribe(sync)
-    note("active", "$sync complete, starting scheduled program", "w")
+    note("active", "${sync} complete, starting scheduled program", "w")
     runIn(30, cycleOn)
 }
 
@@ -1351,21 +1354,21 @@ def getDrySp(i){
 }
 
 //notifications to device, pushed if requested
-def note(status, message, type){
-	log.debug "${status}:  ${message}"
-    switches.notify("${status}", "${message}")
+def note(String status, String message, String type){
+	log.debug status+': '+ message
+    switches.notify(status, message)
     if(notify)
     {
-      if (notify.contains('Daily') && type == "d"){
+      if (notify.contains('Daily') && type == 'd'){
         send(message)
       }
-      if (notify.contains('Weather') && type == "f"){     
+      if (notify.contains('Weather') && type == 'f'){     
         send(message)
       }
-      if (notify.contains('Warnings') && type == "w"){     
+      if (notify.contains('Warnings') && type == 'w'){     
         send(message)
       }
-      if (notify.contains('Moisture') && type == "m"){        
+      if (notify.contains('Moisture') && type == 'm'){        
         send(message)
       }
       if (notify.contains('Info') && type == 'i'){
@@ -1511,7 +1514,7 @@ def setSeason() {
 
 //capture today's total rainfall - scheduled for just before midnight each day
 def getRainToday() {
-	def wzipcode = "${zipString()}"   
+	def wzipcode = zipString()   
     Map wdata = getWeatherFeature('conditions', wzipcode)
     if (wdata == null) {
     	log.debug "getRainTotal ${zipString()} error: wdata is null"
@@ -1536,16 +1539,15 @@ def getRainToday() {
 
 //check weather
 def isWeather(){
-	log.debug "isWeather()"
+	log.debug 'isWeather()'
 	
 	if (!isRain && !isSeason) return false		// no need to do any of this	
 	
-    def wzipcode = "${zipString()}"   
-   	log.debug "weather ${wzipcode}"   
+    String wzipcode = zipString()   
+   	log.debug "isWeather ${wzipcode}"   
     //seasonal q factor
-    def qFact = 0.7
-//    Map wdata = getWeatherFeature('forecast10day/conditions/geolookup/yesterday/astronomy', wzipcode)
-    Map wdata = getWeatherFeature('forecast10day/conditions/geolookup/astronomy', wzipcode)
+    float qFact = 0.7
+    Map wdata = getWeatherFeature('forecast/conditions/geolookup/astronomy', wzipcode)
     if (wdata != null) {
     	log.debug wdata.response
 		if (wdata.response.containsKey('error')) {
@@ -1562,22 +1564,23 @@ def isWeather(){
     
     float qpfTodayIn = 0.0
     float qpfTomIn = 0.0
+    float popToday = 50.0
+    float popTom = 50.0
     float TRain = 0.0
     float YRain = 0.0
     float weeklyRain = 0.0
-    log.debug "isWeather(): isRain"
     if (isRain) {
+    	log.debug "isWeather(): isRain"
     	// Forecast rain
-		if (!wdata.response.features.containsKey('forecast10day') || (wdata.response.features.forecast10day.toInteger() != 1) || (wdata.forecast == null)) {
+		if (!wdata.response.features.containsKey('forecast') || (wdata.response.features.forecast.toInteger() != 1) || (wdata.forecast == null)) {
     		log.debug "Unable to get weather forecast."
     		return false
     	}
-    	//def qpf = wdata.forecast.simpleforecast.forecastday.qpf_allday.in	// was .mm      
-    	//if (qpf.get(0).isNumber()) qpfTodayIn = qpf.get(0).toFloat() 		// Math.round(qpf.get(0).toInteger() /25.4 * 100) /100    
-    	//if (qpf.get(1).isNumber()) qpfTomIn = qpf.get(1).toFloat() 			// Math.round(qpf.get(1).toInteger() /25.4 * 100) /100    
     	if (wdata.forecast.simpleforecast.forecastday[0].qpf_allday.in.isNumber()) qpfTodayIn = wdata.forecast.simpleforecast.forecastday[0].qpf_allday.in.toFloat()
+		if (wdata.forecast.simpleforecast.forecastday[0].pop.isNumber()) popToday = wdata.forecast.simpleforecast.forecastday[0].pop.toInteger() / 100.0
     	if (wdata.forecast.simpleforecast.forecastday[1].qpf_allday.in.isNumber()) qpfTomIn = wdata.forecast.simpleforecast.forecastday[1].qpf_allday.in.toFloat()
-
+		if (wdata.forecast.simpleforecast.forecastday[1].pop.isNumber()) popTom = wdata.forecast.simpleforecast.forecastday[1].pop.toInteger() / 100.0
+		
     	// current conditions
 		if (!wdata.response.features.containsKey('conditions') || (wdata.response.features.conditions.toInteger() != 1) || (wdata.current_observation == null)) {
     		log.debug "Unable to get current weather conditions."
@@ -1589,27 +1592,27 @@ def isWeather(){
     	}
 
     	// reported rain
-    	def day = getWeekDay()
-    	YRain = state.Rain.get(day - 1).toFloat()
+    	int day = getWeekDay()
+    	YRain = state.Rain[day - 1]
     
     	if (TRain > qpfTodayIn) qpfTodayIn = TRain	// already have more rain than forecast    
-    	log.debug "TRain ${TRain} qpfTodayIn ${qpfTodayIn}, YRain ${YRain}"
+    	log.debug "TRain ${TRain} qpfTodayIn ${qpfTodayIn} @ ${popToday}%, YRain ${YRain}"
     
     	int i = 0
 		while (i <= 6){
     		def factor = 0
         	if ((day - i) > 0) factor = day - i
         	else factor =  day + 7 - i
-        	def getrain = state.Rain.get(i)
-    		if (factor != 0) weeklyRain += getrain.toFloat() / factor
+        	float getrain = state.Rain[i]
+    		if (factor != 0) weeklyRain += (getrain / factor)
     		i++
     	}
     	log.debug "weeklyRain ${weeklyRain}"
     }
      
-     log.debug "isWeather() build report"      
+    log.debug "isWeather() build report"      
     // build report
-    def city = wzipcode
+    String city = wzipcode
 	if (wdata.response.features.containsKey('geolookup') && (wdata.response.features.geolookup.toInteger() == 1) && (wdata.location != null)) {
     	city = wdata.location.city
     }
@@ -1617,9 +1620,9 @@ def isWeather(){
     log.debug "isWeather() get highs"
     //get highs
 //   	def getHigh = wdata.forecast.simpleforecast.forecastday.high.fahrenheit
-   	def highToday = 0
+   	int highToday = 0
    	if (wdata.forecast.simpleforecast.forecastday[0].high.fahrenheit.isNumber()) highToday = wdata.forecast.simpleforecast.forecastday[0].high.fahrenheit.toInteger()
-   	def highTom = 0
+   	int highTom = 0
    	if (wdata.forecast.simpleforecast.forecastday[1].high.fahrenheit.isNumber()) highTom = wdata.forecast.simpleforecast.forecastday[1].high.fahrenheit.toInteger()
    	
     def weatherString = "${city} weather\n Today: ${highToday}F"
@@ -1629,22 +1632,29 @@ def isWeather(){
     
     if (isSeason)
     {   
-//    	def avgHigh = Math.round((getHigh.get(0).toInteger() + getHigh.get(1).toInteger() + getHigh.get(2).toInteger() + getHigh.get(3).toInteger() + getHigh.get(4).toInteger())/5)    
+		if (!isRain) { // we need to verify we have good data first if we didn't do it above
+			if (!wdata.response.features.containsKey('forecast') || (wdata.response.features.forecast.toInteger() != 1) || (wdata.forecast == null)) {
+    			log.debug "Unable to get weather forecast."
+    			return false
+    		}
+		}
+		
+		// is the temp going up or down for the next few days?
     	float totalHigh = 0.0
     	int j = 0
     	int highs = 0
-    	while (j <5) {
+    	while (j < 4) {
     		if (wdata.forecast.simpleforecast.forecastday[j].high.fahrenheit.isNumber()) {
     			totalHigh += wdata.forecast.simpleforecast.forecastday[j].high.fahrenheit.toFloat()
     			highs += 1
     		}
     		j++
     	}
-    	def avgHigh = highToday
-    	if ( highs > 0 ) avgHigh = Math.round(totalHigh / highs.toFloat())
+    	float avgHigh = highToday
+    	if ( highs > 0 ) avgHigh = totalHigh / highs
     	
         //daily adjust
-        state.seasonAdj = Math.round((highToday.toFloat()/avgHigh.toFloat()) * 100.0)        
+        state.seasonAdj = Math.round((highToday / avgHigh) * 100.0)        
         weatherString += "\n Adjusted ${state.seasonAdj - 100}% for Today"
         
         // Apply seasonal adjustment on Monday each week or at install
@@ -1656,22 +1666,22 @@ def isWeather(){
 
             //get daylight
  			if (wdata.response.features.containsKey('astronomy') && (wdata.response.features.astronomy.toInteger() == 1) && (wdata.moon_phase != null)) {
-            	def getsunRH = 0
+            	int getsunRH = 0
             	if (wdata.moon_phase.sunrise.hour.isNumber()) getsunRH = wdata.moon_phase.sunrise.hour.toInteger()
-        		def getsunRM = 0
+        		int getsunRM = 0
         		if (wdata.moon_phase.sunrise.minute.isNumber()) getsunRM = wdata.moon_phase.sunrise.minute.toInteger()
-        		def getsunSH = 0
+        		int getsunSH = 0
             	if (wdata.moon_phase.sunset.hour.isNumber()) getsunSH = wdata.moon_phase.sunset.hour.toInteger()
-            	def getsunSM = 0
+            	int getsunSM = 0
             	if (wdata.moon_phase.sunset.minute.isNumber()) getsunSM = wdata.moon_phase.sunset.minute.toInteger()
-            	def daylight = ((getsunSH.toInteger() * 60) + getsunSM.toInteger())-((getsunRH.toInteger() * 60) + getsunRM.toInteger())
+            	int daylight = ((getsunSH * 60) + getsunSM)-((getsunRH * 60) + getsunRM)
 				if (daylight >= 850) daylight = 850
             
-            //set seasonal adjustment
-            //state.weekseasonAdj = Math.round((daylight/700 * avgHigh/75) * ((1-(humWeek/100)) * avgHigh/75)*100)
+            	//set seasonal adjustment
+            	//state.weekseasonAdj = Math.round((daylight/700 * avgHigh/75) * ((1-(humWeek/100)) * avgHigh/75)*100)
             	state.weekseasonAdj = Math.round((daylight/700.0) * (avgHigh/70.0) * (qFact * 100))
 
-            //apply seasonal time adjustment
+            	//apply seasonal time adjustment
             	weatherString += "\n Applying seasonal adjustment of ${state.weekseasonAdj-100}% this week"            
             	setSeason()
             } else {
@@ -1679,7 +1689,6 @@ def isWeather(){
             }
         }
     }
-       
     note("season", weatherString , "f")
 
     if (!isRain) return false
@@ -1689,31 +1698,38 @@ def isWeather(){
     
     if (!anySensors()) { // if we have no sensors, rain causes us to skip watering for the day
     	if (switches.latestValue("rainsensor") == "rainsensoron"){
-        	note("raintoday", "is skipping watering, rain sensor is on.", "d")        
+        	note("raintoday", "is skipping, rain sensor is on.", "d")        
         	return true
        	}
-    	if (qpfTodayIn > setrainDelay){              
-        	note("raintoday", "is skipping watering, ${qpfTodayIn}in rain today.", "d")        
+       	float popRain = qpfTodayIn * popToday
+    	if (popRain > setrainDelay){
+    		String rainStr = String.format("%.2f", popRain)
+        	note("raintoday", "is skipping, ${rainStr}in rain is probable today.", "d")        
         	return true
     	}
-    	if (qpfTomIn > setrainDelay){     
-        	note("raintom", "is skipping watering, ${qpfTomIn}in rain expected tomorrow.", "d")
+    	popRain = qpfTom * popTom
+    	if (popRain > setrainDelay){
+    		String rainStr = String.format("%.2f", popRain)
+        	note("raintom", "is skipping, ${rainStr}in rain is probable tomorrow.", "d")
         	return true
     	}
 	    if (weeklyRain > setrainDelay){
-    	    note("rainy", "is skipping watering, ${weeklyRain}in average rain over the past week.", "d")
+	    	String rainStr = String.format("%.2f", weeklyRain)
+    	    note("rainy", "is skipping, ${rainStr}in average rain over the past week.", "d")
         	return true
     	}
     } else { // we have at least one sensor
     	// Ignore rain sensor & historical rain - only skip if more than setrainDelay is expected before midnight tomorrow
-    	float expectedRain = (qpfTodayIn-TRain)	// ignore rain that has already fallen so far today - sensors should already reflect that
-    	if (expectedRain > setrainDelay){              
-        	note('rainy', "is skipping watering, ${expectedRain}in rain expected yet today.", 'd')        
+    	float popRain = (qpfTodayIn * popToday) - TRain	// ignore rain that has already fallen so far today - sensors should already reflect that
+    	if (popRain > setrainDelay){
+    		String rainStr = String.format("%.2f", popRain)
+        	note('rainy', "is skipping, at least ${rainStr}in rain is probable later today.", 'd')        
         	return true
     	}
-    	expectedRain = (qpfTodayIn-TRain)+qpfTomIn
-    	if (expectedRain > setrainDelay){              
-        	note('rainy', "is skipping watering, ${expectedRain}in rain expected later today+tomorrow.", 'd')        
+    	popRain += qpfTomIn * popTom
+    	if (popRain > setrainDelay){
+    		String rainStr = String.format("%.2f", popRain)
+        	note('rainy', "is skipping, at least ${rainStr}in rain is probable later today+tomorrow.", 'd')        
         	return true
     	}
     }
@@ -1984,4 +2000,3 @@ def zoneSetPage16(){
 	state.app = 16
     zoneSetPage()
     }
-
