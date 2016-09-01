@@ -1013,18 +1013,20 @@ def checkRunMap(){
 
 
 //get todays schedule
-def cycleLoop(i)
+def cycleLoop(int i)
 {
 	log.debug "cycleLoop(${i})"
     int zone = 1
-    def cyc = 0
+    int dpw = 0
+    int tpw = 0
+    int cyc = 0
     def rtime = 0
     def timeMap = [:]
     def pumpMap = ""
     def runNowMap = ""
     def soilString = ""
-    def totalCycles = 0
-    def totalTime = 0
+    int totalCycles = 0
+    int totalTime = 0
 
     while(zone <= 16)
     {
@@ -1034,7 +1036,7 @@ def cycleLoop(i)
         if( settings["zone${zone}"] != null && settings["zone${zone}"] != 'Off' && nozzle(zone) != 4 && zoneActive(zone.toString()) )
         {
 		  	// First check if we run this zone today, use either dpwMap or even/odd date
-		  	def dpw = getDPW(zone)          
+		  	dpw = getDPW(zone)          
           	def runToday = 0
           	if (days && (days.contains('Even') || days.contains('Odd'))) {
             	def daynum = new Date().format("dd", location.timeZone)
@@ -1066,17 +1068,17 @@ def cycleLoop(i)
             	if ( soil[0] == 1 )
             	{
                 	cyc = cycles(zone)
-                	def tpw = getTPW(zone)
-                	dpw = getDPW(zone)					// moisture() may have changed DPW
+                	tpw = getTPW(zone)
+                	dpw = getDPW(zone)					// moisture() may also have changed DPW
                 	rtime = calcRunTime(tpw, dpw)                
                 	//daily weather adjust if no sensor
-                	if(isSeason && (settings["sensor${zone}"] == null || !learn)) rtime = Math.round(((rtime.toFloat() / cyc.toFloat()) * (state.seasonAdj.toFloat() / 100.0))+0.5)
+                	if(isSeason && (settings["sensor${zone}"] == null || !learn)) rtime = Math.round(((rtime / cyc) * (state.seasonAdj.toFloat() / 100.0))+0.5)
                 	// runTime is total run time devided by num cycles
-                	else rtime = Math.round((rtime.toFloat() / cyc.toFloat()) + 0.5) 			// round up instead of down (e.g., 23 / 2 = 12, not 11)                 
+                	else rtime = Math.round((rtime / cyc) + 0.5) 			// round up instead of down (e.g., 23 / 2 = 12, not 11)                 
 					totalCycles += cyc
 					totalTime += (rtime * cyc)
                 	runNowMap += "${settings["name${zone}"]}: ${cyc} x ${rtime} min\n"
-                	log.debug "Zone ${zone} Map: ${cyc} x ${rtime} min"
+                	log.debug "Zone ${zone} Map: ${cyc} x ${rtime} min - totalTime: ${totalTime}"
             	}
         	}
 		}
@@ -1091,9 +1093,11 @@ def cycleLoop(i)
         
     if (!runNowMap) return runNowMap
     
-//    totalTime += pumpDelayString.toInteger() * (totalCycles - 1)  // add in the inter-zone pump delays delays
-//    def finishTime = new Date(now() + (60000 * totalTime).toLong()) 
-//    note ( 'moisture', "Schedule run time: ${totalTime} min, expected completion ${finishTime}.", 'w')
+    int pDelay = 5
+    if ("${settings["pumpDelay"]}" != "null") pDelay = "${settings["pumpDelay"]}" as Integer
+    totalTime += pDelay * (totalCycles - 1)  // add in the inter-zone pump delays delays
+    def finishTime = new Date(now() + (60000 * totalTime).toLong()) 
+    note ( 'moisture', "Schedule run time: ${totalTime} min, expected completion ${finishTime}.", 'w')
     
     //send settings to Spruce Controller
     switches.settingsMap(timeMap,4002)
@@ -1145,15 +1149,15 @@ def doorClosed(evt){
 }
 
 //Initialize Days per week, based on TPW, perDay and daysAvailable settings
-def initDPW(i){
-	log.debug "initDPW(${i})"
+int initDPW(int zone){
+	log.debug "initDPW(${zone})"
 	
-	int zone = i.toInteger()
-	def tpw = getTPW(zone)		// was getTPW -does not update times in scheduler without initTPW
+	//int zone = i.toInteger()
+	int tpw = getTPW(zone)		// was getTPW -does not update times in scheduler without initTPW
 	int dpw = 0
 	if(tpw > 0) {
         float perDay = 20.0
-        if(settings["perDay${i}"]) perDay = settings["perDay${i}"].toFloat()
+        if(settings["perDay${zone}"]) perDay = settings["perDay${zone}"].toFloat()
     	dpw = Math.round(tpw.toFloat() / perDay)
     	if(dpw <= 1) dpw = 1
 		// 3 days per week not allowed for even or odd day selection
@@ -1163,68 +1167,67 @@ def initDPW(i){
 		int daycheck = daysAvailable()
     	if(daycheck < dpw) dpw = daycheck
     }
-	state.dpwMap.putAt(zone-1, dpw)
+	state.dpwMap[zone-1] = dpw
     return dpw
 }
 
 // Get current days per week value, calls init if not defined
-def getDPW(zone)
+int getDPW(int zone)
 {
-	def i = zone.toInteger()
-	if(state.dpwMap) return state.dpwMap.get(i-1)
-	return initDPW(i)
+	if(state.dpwMap) return state.dpwMap[zone-1]
+	return initDPW(zone)
 }
 
 //Initialize Time per Week
-def initTPW(i){   
-    //log.trace "initTPW(${i})"
+int initTPW(int zone){   
+    //log.trace "initTPW(${zone})"
     
-    if("${settings["zone${i}"]}" == null || nozzle(i) == 0 || nozzle(i) == 4 || plant(i) == 0 || !zoneActive(i.toString()) ) return 0
+    if("${settings["zone${zone}"]}" == null || nozzle(zone) == 0 || nozzle(zone) == 4 || plant(zone) == 0 || !zoneActive(zone.toString()) ) return 0
     
     // apply gain adjustment
-    def gainAdjust = 100
+    float gainAdjust = 100.0
     if (gain && gain != 0) gainAdjust += gain
     
     // apply seasonal adjustment if enabled and not set to new plants
-    def seasonAdjust = 100
-    if (state.weekseasonAdj && isSeason && settings["plant${i}"] != "New Plants") seasonAdjust = state.weekseasonAdj    
+    float seasonAdjust = 100.0
+    if (state.weekseasonAdj && isSeason && settings["plant${zone}"] != "New Plants") seasonAdjust = state.weekseasonAdj    
 	
-    int zone = i.toInteger()
-	def tpw = 0
+    //int zone = i.toInteger()
+	int tpw = 0
 	
 	// Use learned, previous tpw if it is available
-	if ( settings["sensor${i}"] != null ) {
+	if ( settings["sensor${zone}"] != null ) {
 		seasonAdjust = 100.0 			// no seasonAdjust if this zone uses a sensor
-		if(state.tpwMap && learn) tpw = state.tpwMap.get(zone-1)
+		if(state.tpwMap && learn) tpw = state.tpwMap[zone-1]
 	}
 	
 	// set user-specified minimum time with seasonal adjust	
-    if (settings["minWeek${i}"] != null && settings["minWeek${i}"] != 0) {
-    	tpw = Math.round(("${settings["minWeek${i}"]}").toFloat() * (seasonAdjust.toFloat() / 100.0))
+    if (settings["minWeek${zone}"] != null && settings["minWeek${zone}"] != 0) {
+    	tpw = Math.round(("${settings["minWeek${zone}"]}") * (seasonAdjust / 100.0))
     	} 
     else if ((tpw == null) || (tpw == 0)) { // use calculated tpw
-    	tpw = Math.round((plant(i) * nozzle(i).toFloat()) * (gainAdjust.toFloat() / 100.0) * (seasonAdjust.toFloat() / 100.0))
+    	tpw = Math.round((plant(zone) * nozzle(zone) * (gainAdjust / 100.0) * (seasonAdjust / 100.0))
     	}
 
-	state.tpwMap.putAt(zone-1, tpw)
-    log.debug "initTPW(${i}) tpw: ${tpw}"
+	state.tpwMap[zone-1]
+    log.debug "initTPW(${zone}) tpw: ${tpw}"
     return tpw
 }
 
 // Get the current time per week, calls init if not defined
-def getTPW(zone)
+int getTPW(int zone)
 {
 	// log.debug "getTPW(${zone})"
-	def i = zone.toInteger()
-	if(state.tpwMap) return state.tpwMap.get(i-1)
-	return initTPW(i)
+	//def i = zone.toInteger()
+	if(state.tpwMap) return state.tpwMap[zone-1]
+	return initTPW(zone)
 }
 
 // Calculate daily run time based on tpw and dpw
-def calcRunTime(tpw, dpw)
+int calcRunTime(int tpw, int dpw)
 {           
-    def duration = 0
-    if((tpw > 0) && (dpw > 0)) duration = Math.round(tpw.toFloat() / dpw.toFloat())
+    int duration = 0
+    if((tpw > 0) && (dpw > 0)) duration = Math.round(tpw.toFloat / dpw.toFloat())
     return duration
 }
 
@@ -1243,7 +1246,7 @@ def moisture(int i)
     if (lastHumDate < yesterday) return [1, "Please check ${settings["sensor${i}"]}, no humidity reports in the last ${hours} hours\n"]
 
     def latestHum = settings["sensor${i}"].latestValue("humidity")	// state = 29, value = 29.13
-    def spHum = getDrySp(i).toInteger()
+    int spHum = getDrySp(i).toInteger()
     if (!learn)
     {
         // no learn mode, only looks at target moisture level, doesn't try to adjust tpw
@@ -1257,9 +1260,9 @@ def moisture(int i)
     }
 
     //in Adaptive/learn mode
-    def tpw = getTPW(i)
-    def dpw = getDPW(i)
-    def cpd = cycles(i)
+    int tpw = getTPW(i)
+    int dpw = getDPW(i)
+    int cpd = cycles(i)
     float tpwFloat = tpw.toFloat()
 	float dpwFloat = dpw.toFloat()
 	float cpdFloat = cpd.toFloat()
@@ -1338,8 +1341,8 @@ def moisture(int i)
 
 
 //get moisture SP
-def getDrySp(i){
-    if ("${settings["sensorSp${i}"]}" != "null") return "${settings["sensorSp${i}"]}"  
+int getDrySp(int i){
+    if ("${settings["sensorSp${i}"]}" != "null") return ("${settings["sensorSp${i}"]}").toInteger()  
     else if (settings["plant${i}"] == "New Plants") return 40    
     else{
         switch (settings["option${i}"]) {
@@ -1370,9 +1373,6 @@ def note(String status, String message, String type){
       }
       if (notify.contains('Moisture') && type == 'm'){        
         send(message)
-      }
-      if (notify.contains('Info') && type == 'i'){
-      	send(message)
       }
     }
 }
