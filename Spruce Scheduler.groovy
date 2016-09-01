@@ -947,18 +947,29 @@ def cycleOn(){
     	def syncStatus = sync.currentValue('status')
     	if ( !syncSwitch.contains('off') || syncStatus.contains('active') || syncStatus.contains('pause') || syncStatus.contains('season') ) {
         	subscribe sync, "switch.off", syncOn
+        	state.pauseTime = null		// haven't started yet
         	note('pause', "Waiting for ${sync} to complete before starting schedule", 'w')
         	return
     	}
     }
     if (contact == null || !contact.currentValue('contact').contains('open')) {
     	subscribe switches, "switch.off", cycleOff
-        subscribe contact, "contact.open", doorOpen                
+        subscribe contact, "contact.open", doorOpen
+        
+        String newString = ''
+    	if (state.totalTime) {
+       		def finishTime = new Date(now() + (60000 * state.totalTime).toLong())
+       		newString = ", estimated completion at ${finishTime}"
+    	}
+    	note("active", "Starting scheduled program" + newString, "w")
+    	state.pauseTime = null
         resume()
     }
     else {
     	subscribe switches, "switch.off", cycleOff
+    	state.pauseTime = new Date()
         note('pause', "${contact} opened, ${switches} paused watering", "w")
+        
     }
 }
 
@@ -1094,10 +1105,12 @@ def cycleLoop(int i)
     if (!runNowMap) return runNowMap
     
     int pDelay = 5
-    if ("${settings["pumpDelay"]}" != "null") pDelay = "${settings["pumpDelay"]}" as Integer
+    //if ("${settings["pumpDelay"]}" != "null") pDelay = "${settings["pumpDelay"]}" as Integer
+    if (settings.pumpDelay != null) && settings.pumpDelay.isNumber()) pDelay = settings.pumpDelay.toInteger()
+    
     totalTime += pDelay * (totalCycles - 1)  // add in the inter-zone pump delays delays
-    def finishTime = new Date(now() + (60000 * totalTime).toLong()) 
-    note ( 'moisture', "Schedule run time: ${totalTime} min, expected completion ${finishTime}.", 'w')
+    state.totalTime = totalTime
+    note ( 'moisture', "Projected running time: ${totalTime} minutes", 'w')
     
     //send settings to Spruce Controller
     switches.settingsMap(timeMap,4002)
@@ -1132,19 +1145,31 @@ def resume(){
 
 def syncOn(evt){
     unsubscribe(sync)
-    note("active", "${sync} complete, starting scheduled program", "w")
+    String newString = ''
+    if (state.totalTime) {
+       	def finishTime = new Date(now() + (30000 + (60000 * state.totalTime)).toLong())
+       	newString = ", estimated completion at ${finishTime}"
+    }
+    note("active", "${sync} complete, starting scheduled program" + newString, "w")
     runIn(30, cycleOn)
 }
 
 def doorOpen(evt){
-    note("pause", "$contact opened $switches paused watering", "w")
+    note("pause", "${contact} opened, ${switches} paused watering", "w")
     unsubscribe(switches)
     subscribe contact, "contact.closed", doorClosed
-    switches.off()        
+    switches.off()
+    state.pauseTime = new Date()
 }
      
 def doorClosed(evt){
-    note("active", "$contact closed $switches will resume watering in $contactDelay minutes", "w")    
+	String newString = ''
+	if (state.pauseTIme) {
+		def elapsedTime = (new Date(now() + (60000 * contactDelay).toLong())) - state.pauseTime
+    	def finishTime = state.finishTime + elapsedTime 
+    	newString = ", estimated completion is now ${finishTime}"
+	}
+    note('active', "${contact} closed ${switches} will resume watering in ${contactDelay} minutes" + newString, 'w')    
     runIn(contactDelay * 60, cycleOn)
 }
 
