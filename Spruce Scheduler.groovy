@@ -263,7 +263,7 @@ private hhmm(time, fmt = "h:mm a"){
 }
  
 def pumpDelayString(){
-    if ("${settings["pumpDelay"]}" == "null") return "5"
+    if ("${settings["pumpDelay"]}" == "null") return "0"
     else return "${settings["pumpDelay"]}"
 }
  
@@ -425,13 +425,13 @@ def zonePage() {
 }
 
 // Verify whether a zone is active
-boolean zoneActive(string zoneStr){
+boolean zoneActive(String zoneStr){
 	if (!zoneNumber) return false
     if (zoneNumber.contains(zoneStr)) return true
     return false
 }
 
-def zoneString(){
+String zoneString(){
 	def numberString = "Add zones to setup"
     if (zoneNumber) numberString = "Zones enabled: " + "${zoneNumber}"
     if (learn) numberString += "\nSensor mode: Adaptive"
@@ -515,7 +515,7 @@ def zoneSetPage(){
          
                 input "sensor${state.app}", "capability.relativeHumidityMeasurement", title: "Select moisture sensor?", required: false, multiple: false
          
-                input "sensorSp${state.app}", "number", title: "Minimum moisture sensor target value, Setpoint: ${getDrySp("${state.app}")}", required: false
+                input "sensorSp${state.app}", "number", title: "Minimum moisture sensor target value, Setpoint: ${getDrySp(state.app)}", required: false
         	}
         section(""){
             paragraph image: "http://www.plaidsystems.com/smartthings/st_timer.png",
@@ -702,77 +702,76 @@ def getZoneSummary(){
     return summary
 }
  
-def display(int i){
+String display(String i){
 	//log.trace "display(${i})"
-    def displayString = ""    
-    int tpw = initTPW(i)
-    int dpw = initDPW(i)
+    String displayString = ''    
+    int tpw = initTPW(i.toInteger())
+    int dpw = initDPW(i.toInteger())
     int runTime = calcRunTime(tpw, dpw)
-    if ("${settings["zone${i}"]}" != "null") displayString += "${settings["zone${i}"]} : "
-    if ("${settings["plant${i}"]}" != "null") displayString += "${settings["plant${i}"]} : "
-    if ("${settings["option${i}"]}" != "null") displayString += "${settings["option${i}"]} : "
-    if ("${settings["sensor${i}"]}" != "null") displayString += "${settings["sensor${i}"]}=${getDrySp("${i}")}% : "
-    if ("${runTime}" != '0' && "${dpw}" != '0') displayString += "${runTime} minutes, ${dpw} days per week"
-    return "${displayString}"
+    if (settings."zone${i}") displayString += settings."zone${i}" + " : "
+    if (settings."plant${i}") displayString += settings."plant${i}" + " : "
+    if (settings."option${i}") displayString += settings."option${i}" + " : "
+    if (settings."sensor${i}") displayString += settings."sensor${i}" + "=${getDrySp(i)}% : "
+    if ((runTime != 0) && (dpw != 0)) displayString += "${runTime} minutes, ${dpw} days per week"
+    return displayString
 }
 
-def getimage(int i){
-	String image = ''
-    if ("${settings["zone${i}"]}" == "Off") return "http://www.plaidsystems.com/smartthings/off2.png"   
-    else if ("${settings["zone${i}"]}" == "Master Valve") return "http://www.plaidsystems.com/smartthings/master.png"
-    else if ("${settings["zone${i}"]}" == "Pump") return "http://www.plaidsystems.com/smartthings/pump.png"
-    else if ("${settings["plant${i}"]}" != "null" && "${settings["zone${i}"]}" != "null")// && "${settings["option${i}"]}" != "null")
-    	image = "${settings["plant${i}"]}"
+String getimage(String i){
+    if (settings."zone${i}" == 'Off') return 'http://www.plaidsystems.com/smartthings/off2.png'   
+    else if (settings."zone${i}" == 'Master Valve') return 'http://www.plaidsystems.com/smartthings/master.png'
+    else if (settings."zone${i}" == 'Pump') return 'http://www.plaidsystems.com/smartthings/pump.png'
+    else if (settings."plant${i}" != "null" && settings."zone${i}" != "null")// && "${settings["option${i}"]}" != "null")
+    	i = settings."plant${i}"
      
-    switch(image){
+    switch(i){
         case "null":
-        case null:
-            return "http://www.plaidsystems.com/smartthings/off2.png"
-        case "Off":
-            return "http://www.plaidsystems.com/smartthings/off2.png"
-        case "Lawn":
-            return "http://www.plaidsystems.com/smartthings/st_lawn_200_r.png"
-        case "Garden":
-            return "http://www.plaidsystems.com/smartthings/st_garden_225_r.png"
-        case "Flowers":
-            return "http://www.plaidsystems.com/smartthings/st_flowers_225_r.png"
-        case "Shrubs":
-            return "http://www.plaidsystems.com/smartthings/st_shrubs_225_r.png"
-        case "Trees":
-            return "http://www.plaidsystems.com/smartthings/st_trees_225_r.png"
-        case "Xeriscape":
-            return "http://www.plaidsystems.com/smartthings/st_xeriscape_225_r.png"
-        case "New Plants":
-            return "http://www.plaidsystems.com/smartthings/st_newplants_225_r.png"
-        case "Spray":
-            return "http://www.plaidsystems.com/smartthings/st_spray_225_r.png"
-        case "Rotor":
-            return "http://www.plaidsystems.com/smartthings/st_rotor_225_r.png"
-        case "Drip":
-            return "http://www.plaidsystems.com/smartthings/st_drip_225_r.png"
-        case "Master Valve":
+        // case null:
+            return 'http://www.plaidsystems.com/smartthings/off2.png'
+        case 'Off':
+            return 'http://www.plaidsystems.com/smartthings/off2.png'
+        case 'Lawn':
+            return 'http://www.plaidsystems.com/smartthings/st_lawn_200_r.png'
+        case 'Garden':
+            return 'http://www.plaidsystems.com/smartthings/st_garden_225_r.png'
+        case 'Flowers':
+            return 'http://www.plaidsystems.com/smartthings/st_flowers_225_r.png'
+        case 'Shrubs':
+            return 'http://www.plaidsystems.com/smartthings/st_shrubs_225_r.png'
+        case 'Trees':
+            return 'http://www.plaidsystems.com/smartthings/st_trees_225_r.png'
+        case 'Xeriscape':
+            return 'http://www.plaidsystems.com/smartthings/st_xeriscape_225_r.png'
+        case 'New Plants':
+            return 'http://www.plaidsystems.com/smartthings/st_newplants_225_r.png'
+        case 'Spray':
+            return 'http://www.plaidsystems.com/smartthings/st_spray_225_r.png'
+        case 'Rotor':
+            return 'http://www.plaidsystems.com/smartthings/st_rotor_225_r.png'
+        case 'Drip':
+            return 'http://www.plaidsystems.com/smartthings/st_drip_225_r.png'
+        case 'Master Valve':
             return "http://www.plaidsystems.com/smartthings/st_master_225_r.png"
-        case "Pump":
-            return "http://www.plaidsystems.com/smartthings/st_pump_225_r.png"
-        case "Slope":
-            return "http://www.plaidsystems.com/smartthings/st_slope_225_r.png"
-        case "Sand":
-            return "http://www.plaidsystems.com/smartthings/st_sand_225_r.png"
-        case "Clay":
-            return "http://www.plaidsystems.com/smartthings/st_clay_225_r.png"
-        case "No Cycle":
-            return "http://www.plaidsystems.com/smartthings/st_cycle1x_225_r.png"
-        case "Cycle 2x":
-            return "http://www.plaidsystems.com/smartthings/st_cycle2x_225_r.png"
+        case 'Pump':
+            return 'http://www.plaidsystems.com/smartthings/st_pump_225_r.png'
+        case 'Slope':
+            return 'http://www.plaidsystems.com/smartthings/st_slope_225_r.png'
+        case 'Sand':
+            return 'http://www.plaidsystems.com/smartthings/st_sand_225_r.png'
+        case 'Clay':
+            return 'http://www.plaidsystems.com/smartthings/st_clay_225_r.png'
+        case 'No Cycle':
+            return 'http://www.plaidsystems.com/smartthings/st_cycle1x_225_r.png'
+        case 'Cycle 2x':
+            return 'http://www.plaidsystems.com/smartthings/st_cycle2x_225_r.png'
         case "Cycle 3x":
-            return "http://www.plaidsystems.com/smartthings/st_cycle3x_225_r.png"
+            return 'http://www.plaidsystems.com/smartthings/st_cycle3x_225_r.png'
         default:
-            return "http://www.plaidsystems.com/smartthings/off2.png"            
+            return 'http://www.plaidsystems.com/smartthings/off2.png'            
         }
     }
  
-String getname(int i) { 
-    if ("${settings["name${i}"]}" != "null") return "${settings["name${i}"]}"   
+String getname(String i) { 
+    if (settings."name${i}" != "null") return settings."name${i}"  
     else return "Zone ${i}"
 }
 
@@ -881,14 +880,14 @@ def manualStart(evt){
         { 
             state.run = true        
             runNowMap = "${app.label} manually started, watering in 1 minute:\n" + runNowMap
-            note("active", "${runNowMap}", "d")                      
+            note('active', "${runNowMap}", 'd')                      
             runIn(60, cycleOn)   //start water program
         }
 
         else {
             switches.programOff()
             state.run = false        
-            note("skipping", "Check schedule setup.", "d")
+            note('skipping', 'Check schedule setup', 'd')
         }
     }
 }
@@ -970,8 +969,8 @@ def cycleOn(){
         String newString = ''
     	if (state.totalTime && !state.startTime) {
     		state.startTime = new Date()
-       		def finishTime = new Date(now() + (60000 * state.totalTime).toLong())
-       		newString = ", estimated completion at ${finishTime}"
+       		def finishTime = new Date(now() + (60000 * state.totalTime).toLong()).format('EEEE @ h:mm a', location.timeZone)
+       		newString = "\nETC: ${finishTime}"
     	}
     	note('active', "${app.label} starting" + newString, 'd')
     	state.pauseTime = null
@@ -1059,7 +1058,7 @@ def cycleLoop(int i)
     {
     	if (isDebug) log.debug "cycleLoop(): Zone ${zone}"
         rtime = 0
-        if( settings["zone${zone}"] != null && settings["zone${zone}"] != 'Off' && nozzle(zone) != 4 && zoneActive(zone.toString()) )
+        if( settings."zone${zone}" != null && settings."zone${zone}" != 'Off' && nozzle(zone) != 4 && zoneActive(zone.toString()) )
         {
 		  	// First check if we run this zone today, use either dpwMap or even/odd date
 		  	dpw = getDPW(zone)          
@@ -1120,15 +1119,15 @@ def cycleLoop(int i)
         
     if (!runNowMap) return runNowMap			// nothing to run today
     
-    int pDelay = 5
+    int pDelay = 0
     //if ("${settings["pumpDelay"]}" != "null") pDelay = "${settings["pumpDelay"]}" as Integer
-    if (settings.pumpDelay != null) && settings.pumpDelay.isNumber()) pDelay = settings.pumpDelay.toInteger()
+    if ((settings.pumpDelay != null) && settings.pumpDelay.isNumber()) pDelay = settings.pumpDelay.toInteger()
     
     totalTime += pDelay * totalCycles  // add in the pump startup and inter-zone delays
     state.totalTime = totalTime
     state.startTime = null
     state.pauseTime = null
-    note ( 'moisture', "${app.label} projected running time: ${totalTime} minutes", 'd')
+    note ( 'moisture', "${app.label}\nDuration: ${totalTime} minutes", 'd')
     
     //send settings to Spruce Controller
     switches.settingsMap(timeMap,4002)
@@ -1165,8 +1164,8 @@ def syncOn(evt){
     unsubscribe(sync)
     String newString = ''
     if (state.totalTime) {
-       	def finishTime = new Date(now() + (30000 + (60000 * state.totalTime)).toLong()) // add in the 30 second delay
-       	newString = ", estimated completion at ${finishTime}"
+       	def finishTime = new Date(now() + (30000 + (60000 * state.totalTime)).toLong()).format('EEEE @ h:mm a', location.timeZone) // add in the 30 second delay
+       	newString = "\nETC: ${finishTime}"
     }
     note('active', "${sync} complete, starting scheduled program" + newString, 'd')
     runIn(30, cycleOn)
@@ -1184,9 +1183,9 @@ def doorClosed(evt){
 	String newString = ''
 	if (state.pauseTIme && state.startTime) {
 		def elapsedTime = (new Date(now() + (60000 * contactDelay).toLong())) - state.pauseTime
-    	def finishTime = state.startTime + state.totalTime + elapsedTime 
+    	def finishTime = (state.startTime + state.totalTime + elapsedTime).format('EEEE @ h:mm a', location.timeZone) 
     	state.pauseTime = null
-    	newString = ", estimated completion is now ${finishTime}"
+    	newString = "\nnew ETC: ${finishTime}"
 	}
     note('active', "${contact} closed ${switches} will resume watering in ${contactDelay} minute(s)" + newString, 'w')    
     runIn(contactDelay * 60, cycleOn)
@@ -1195,6 +1194,7 @@ def doorClosed(evt){
 //Initialize Days per week, based on TPW, perDay and daysAvailable settings
 int initDPW(int zone){
 	log.debug "initDPW(${zone})"
+	if(!state.dpwMap) state.dpwMap = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
 	
 	//int zone = i.toInteger()
 	int tpw = getTPW(zone)		// was getTPW -does not update times in scheduler without initTPW
@@ -1216,17 +1216,17 @@ int initDPW(int zone){
 }
 
 // Get current days per week value, calls init if not defined
-int getDPW(int zone)
-{
+int getDPW(int zone) {
 	if(state.dpwMap) return state.dpwMap[zone-1]
 	return initDPW(zone)
 }
 
 //Initialize Time per Week
-int initTPW(int zone){   
+int initTPW(int zone) {   
     //log.trace "initTPW(${zone})"
+    if (!state.tpwMap) state.tpwMap = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
     
-    if("${settings["zone${zone}"]}" == null || nozzle(zone) == 0 || nozzle(zone) == 4 || plant(zone) == 0 || !zoneActive(zone.toString()) ) return 0
+    if ("${settings["zone${zone}"]}" == null || nozzle(zone) == 0 || nozzle(zone) == 4 || plant(zone) == 0 || !zoneActive(zone.toString()) ) return 0
     
     // apply gain adjustment
     float gainAdjust = 100.0
@@ -1245,13 +1245,15 @@ int initTPW(int zone){
 		if(state.tpwMap && learn) tpw = state.tpwMap[zone-1]
 	}
 	
-	// set user-specified minimum time with seasonal adjust	
-    if (settings["minWeek${zone}"] != null && settings["minWeek${zone}"] != 0) {
-    	tpw = Math.round(("${settings["minWeek${zone}"]}") * (seasonAdjust / 100.0))
-    	} 
+	// set user-specified minimum time with seasonal adjust
+	int minWeek = 0
+	if (settings["minWeek${zone}"] != null) minWeek = settings["minWeek${zone}"].toInteger()
+    if (minWeek != 0) {
+    	tpw = Math.round(minWeek * (seasonAdjust / 100.0))
+    } 
     else if ((tpw == null) || (tpw == 0)) { // use calculated tpw
-    	tpw = Math.round((plant(zone) * nozzle(zone) * (gainAdjust / 100.0) * (seasonAdjust / 100.0))
-    	}
+    	tpw = Math.round((plant(zone) * nozzle(zone) * (gainAdjust / 100.0) * (seasonAdjust / 100.0)))
+    }
 
 	state.tpwMap[zone-1] = tpw
     log.debug "initTPW(${zone}) tpw: ${tpw}"
@@ -1262,7 +1264,6 @@ int initTPW(int zone){
 int getTPW(int zone)
 {
 	// log.debug "getTPW(${zone})"
-	//def i = zone.toInteger()
 	if(state.tpwMap) return state.tpwMap[zone-1]
 	return initTPW(zone)
 }
@@ -1271,7 +1272,7 @@ int getTPW(int zone)
 int calcRunTime(int tpw, int dpw)
 {           
     int duration = 0
-    if((tpw > 0) && (dpw > 0)) duration = Math.round(tpw.toFloat / dpw.toFloat())
+    if ((tpw > 0) && (dpw > 0)) duration = Math.round(tpw.toFloat() / dpw.toFloat())
     return duration
 }
 
@@ -1281,7 +1282,7 @@ def moisture(int i)
 	boolean isDebug = true
 	if (isDebug) log.debug "moisture(${i})"
 	// No Sensor on this zone or manual start skips moisture checking altogether
-	if(settings["sensor${i}"] == null || i == 0) {     
+	if (settings."sensor${i}" == null || i == 0) {     
         return [1,""]
     }
 
@@ -1289,19 +1290,19 @@ def moisture(int i)
     def hours = 48
     def yesterday = new Date(now() - (1000 * 60 * 60 * hours).toLong())    
     def lastHumDate = settings["sensor${i}"].latestState('humidity').date
-    if (lastHumDate < yesterday) return [1, "Please check ${settings["sensor${i}"]}, no humidity reports in the last ${hours} hours\n"]
+    if (lastHumDate < yesterday) return [1, "Please check ${settings."sensor${i}"}, no humidity reports in the last ${hours} hours\n"]
 
-    float latestHum = settings["sensor${i}"].latestValue('humidity').toFloat()	// state = 29, value = 29.13
-    int spHum = getDrySp(i).toInteger()
+    float latestHum = settings."sensor${i}".latestValue('humidity').toFloat()	// state = 29, value = 29.13
+    int spHum = getDrySp(i)
     if (!learn)
     {
         // no Delay mode, only looks at target moisture level, doesn't try to adjust tpw
 		if(latestHum <= spHum.toFloat()) {
            //dry soil
-           return [1,"${settings["name${i}"]}, Watering: ${settings["sensor${i}"]} reads ${latestHum}%, SP is ${spHum}%\n"]              
+           return [1,"${settings."name${i}"}, Watering: ${settings."sensor${i}"} reads ${latestHum}%, SP is ${spHum}%\n"]              
         } else {
            //wet soil
-           return [0,"${settings["name${i}"]}, Skipping: ${settings["sensor${i}"]} reads ${latestHum}%, SP is ${spHum}%\n"]           
+           return [0,"${settings."name${i}"}, Skipping: ${settings."sensor${i}"} reads ${latestHum}%, SP is ${spHum}%\n"]           
         }
     }
 
@@ -1318,7 +1319,7 @@ def moisture(int i)
     if (latestHum > 0.0) diffHum = (spHum.toFloat() - latestHum) / 100.0
     else {
     	diffHum = 0.02 // Safety valve in case sensor is reporting 0% humidity (e.g., somebody pulled it out of the ground or flower pot)
-    	note("warning", "Please check sensor ${settings["sensor${i}"]}, it is currently reading 0%", "w")
+    	note("warning", "Please check sensor ${settings."sensor${i}"}, it is currently reading 0%", "w")
     }
 	
 	int minimum = cpd * dpw				// minimum of 1 minute per scheduled days per week (note - can be 1*1=1)
@@ -1335,14 +1336,14 @@ def moisture(int i)
     	if (tpwAdjust < (tpwFloat * -0.20)) tpwAdjust = Math.round((tpwFloat * -0.20) - 0.5)	// limit slow decay to 20% of tpw per day
 		if (tpwAdjust > (-1 * minimum)) tpwAdjust = -1 * minimum // but we need to move at least 1 minute per cycle per day to actually increase the watering time
     }
-    if isDebug() log.debug "moisture(${i}): diffHum: ${diffHum}, tpwAdjust: ${tpwAdjust}"
+    if (isDebug) log.debug "moisture(${i}): diffHum: ${diffHum}, tpwAdjust: ${tpwAdjust}"
     
     String moistureSum = ''
  
     int newTPW = Math.round(tpw + tpwAdjust)
     if (tpwAdjust > 0) {		// need more water
 		int perDay = 20
-        if (settings["perDay${i}"]) perDay = settings["perDay${i}"].toInteger()
+        if (settings."perDay${i}") perDay = settings."perDay${i}".toInteger()
         if (perDay < 8) perDay = 8
   		if (newTPW < perDay) {
   			newTPW = perDay	// arbitrary minimum if we're adjusting up from a small number
@@ -1353,36 +1354,36 @@ def moisture(int i)
   		}
     	state.tpwMap[i-1] = newTPW
         state.dpwMap[i-1] = initDPW(i)				// call initDPW not getDPW because it may need to recalculate days per week
-    	moistureSum = "${settings["name${i}"]}, Watering: ${settings["sensor${i}"]} reads ${latestHum}%, SP is ${spHum}%, time adjusted by ${tpwAdjust} mins to ${newTPW} mins/week\n"
+    	moistureSum = "${settings."name${i}"}, Watering: ${settings."sensor${i}"} reads ${latestHum}%, SP is ${spHum}%, time adjusted by ${tpwAdjust} mins to ${newTPW} mins/week\n"
     	return [1, moistureSum]
     }
     // else, if we are currently above the humidity SP
     else if (tpwAdjust < 0) { 	// New: No longer water if sensor humidity is above SP
     	// Find the minimum tpw
 		int minLimit = 0
-		if (settings["minWeek${i}"] != null) {		// if minWeek != 0, then use that as the minimum limiter
-    		if (settings["minWeek${i}"] != 0) minLimit = settings["minWeek${i}"].toInteger()
+		if (settings."minWeek${i}" != null) {		// if minWeek != 0, then use that as the minimum limiter
+    		if (settings."minWeek${i}" != 0) minLimit = settings."minWeek${i}".toInteger()
 		}
 		if (minLimit > 0) {
 			if (newTPW < minLimit) newTPW = minLimit
 		} else if (newTPW < minimum) {
 			newTPW = minimum
-    		note("warning", "Please check ${settings["sensor${i}"]}, Zone ${i} time per week is very low: ${newTPW} mins/week","w")
+    		note("warning", "Please check ${settings."sensor${i}"}, ${settings."name${i}"} time per week is very low: ${newTPW} mins/week",'w')
 		}
         if (state.tpwMap[i-1] != newTPW) {	// are we changing the tpw?
         	state.tpwMap[i-1] = newTPW		// store the new tpw
         	state.dpwMap[i-1] = initDPW(i)	// may need to recalculate days per week
         	def adjusted = newTPW - tpw // so that the next note is accurate
-    		moistureSum = "${settings["name${i}"]}, Skipping: ${settings["sensor${i}"]} reads ${latestHum}% SP is ${spHum}%, time adjusted by ${adjusted} mins to ${newTPW} mins/week\n"
+    		moistureSum = "${settings."name${i}"}, Skipping: settings."sensor${i}"} reads ${latestHum}% SP is ${spHum}%, adjusted by ${adjusted} mins to ${newTPW} mins/week\n"
         } else {							// not changing tpw
-        	moistureSum = "${settings["name${i}"]}, Skipping: ${settings["sensor${i}"]} reads ${latestHum}%, SP is ${spHum}% (no time adjustment, ${tpw} mins/week)\n"
+        	moistureSum = "${settings."name${i}"}, Skipping: ${settings."sensor${i}"} reads ${latestHum}%, SP is ${spHum}% (no adjustment, ${tpw} mins/week)\n"
     	}
     	return [0, moistureSum]
     } else if (diffHum >= 0.0) {		// assert tpwAdjust == 0 
-        moistureSum = "${settings["name${i}"]}, Watering: ${settings["sensor${i}"]} reads ${latestHum}%, SP is ${spHum}% (no time adjustment, ${tpw} mins/week)\n"
+        moistureSum = "${settings."name${i}"}, Watering: ${settings."sensor${i}"} reads ${latestHum}%, SP is ${spHum}% (no adjustment, ${tpw} mins/week)\n"
         return [1, moistureSum]
     } else { 							// assert diffUm < 0.0 - never water if current sensor > SP
-    	moistureSum = "${settings["name${i}"]}, Skipping: ${settings["sensor${i}"]} reads ${latestHum}%, SP is ${spHum}% (no time adjustment, ${tpw} mins/week)\n"
+    	moistureSum = "${settings."name${i}"}, Skipping: ${settings."sensor${i}"} reads ${latestHum}%, SP is ${spHum}% (no adjustment, ${tpw} mins/week)\n"
     	return [0, moistureSum]
     }
     return [0, moistureSum]
