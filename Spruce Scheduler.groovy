@@ -980,10 +980,10 @@ def cycleOn(){
             String newString = ''
             if (state.totalTime && !state.startTime) {
                 state.startTime = new Date()
-                def finishTime = new Date(now() + (60000 * state.totalTime).toLong()).format('EEEE @ h:mm a', location.timeZone)
+                String finishTime = new Date(now() + (60000 * state.totalTime).toLong()).format('EEEE @ h:mm a', location.timeZone)
                 newString = "\nETC: ${finishTime}"
             }
-            note('active', "${app.label} starting" + newString, 'd')
+            note('active', "${app.label} starting${newString}", 'd')
             state.pauseTime = null
             resume()
         }
@@ -1007,8 +1007,11 @@ def cycleOff(evt){
     unsubscribe(switches)    
     if (enableManual) subscribe(switches, 'switch.programOn', manualStart)
     // if the control contact is closed, we are done...else we're waiting for it to close
-    if (contact == null || !contact.currentValue('contact').contains('open')){    
-    	note('finished', 'Finished watering for today', 'i')
+    if (contact == null || !contact.currentValue('contact').contains('open')){
+    	state.finishTime = new Date()
+    	String finishTime = state.finishTime.format('h:mm a', location.timeZone)
+    	note('finished', "${app.label} finished watering at ${finishTime}, 'i')
+    	
     } else
     	log.debug "${switches} turned off, but ${contact} is open"
 
@@ -1049,7 +1052,9 @@ def checkRunMap(){
         state.run = true
         state.startTime = null
         runIn(60, cycleOn)			// start water
-        runNowMap = "${app.label} watering begins in 1 minute,\nTotal runtime: ${state.totalTime} minutes:\n" + runNowMap
+        int hours = state.totalTime / 60			// DON'T Math.round this one
+        int mins = state.totalTime - (hours * 60)
+        runNowMap = "${app.label} watering in 1 minute,\nRun time: ${hours} hours & ${mins} minutes:\n" + runNowMap
         note('active', "${runNowMap}", 'd')
     }
     else {
@@ -1155,7 +1160,7 @@ def cycleLoop(int i)
     //if ("${settings["pumpDelay"]}" != "null") pDelay = "${settings["pumpDelay"]}" as Integer
     if ((settings.pumpDelay != null) && settings.pumpDelay.isNumber()) pDelay = settings.pumpDelay.toInteger()
     
-    totalTime += pDelay * totalCycles  // add in the pump startup and inter-zone delays
+    totalTime += Math.round(((pDelay * totalCycles) / 60.0) + 0.5)  // add in the pump startup and inter-zone delays
     state.totalTime = totalTime
     state.startTime = null
     state.pauseTime = null
@@ -1190,7 +1195,7 @@ def writeCycles(){
 }
 
 def resume(){
-	log.debug 'resume()'
+	//log.debug 'resume()'
 	switches.on()    
 }
 
@@ -1198,15 +1203,15 @@ def syncOn(evt){
     unsubscribe(sync)
     String newString = ''
     if (state.totalTime) {
-       	def finishTime = new Date(now() + (30000 + (60000 * state.totalTime)).toLong()).format('EEEE @ h:mm a', location.timeZone) // add in the 30 second delay
+       	String finishTime = new Date(now() + (30000 + (60000 * state.totalTime)).toLong()).format('EEEE @ h:mm a', location.timeZone) // add in the 30 second delay
        	newString = "\nETC: ${finishTime}"
     }
-    note('active', "${sync} complete, starting scheduled program" + newString, 'i')
+    note('active', "${sync} done, starting ${app.label}${newString}", 'i')
     runIn(30, cycleOn)
 }
 
 def doorOpen(evt){
-    note('pause', "${contact} opened, ${switches} paused watering", 'c')
+    note('pause', "${contact} opened, ${switches} watering paused", 'c')
     unsubscribe(switches)
     subscribe contact, 'contact.closed', doorClosed
     switches.off()
@@ -1217,11 +1222,11 @@ def doorClosed(evt){
 	String newString = ''
 	if (state.pauseTIme && state.startTime) {
 		def elapsedTime = (new Date(now() + (60000 * contactDelay).toLong())) - state.pauseTime
-    	def finishTime = (state.startTime + state.totalTime + elapsedTime).format('EEEE @ h:mm a', location.timeZone) 
+    	String finishTime = (state.startTime + state.totalTime + elapsedTime).format('EEEE @ h:mm a', location.timeZone) 
     	state.pauseTime = null
     	newString = "\nNew ETC: ${finishTime}"
 	}
-    note('active', "${contact} closed, ${switches} will resume watering in ${contactDelay} minute(s)" + newString, 'c')    
+    note('active', "${contact} closed, ${switches} will resume watering in ${contactDelay} minute(s)${newString}", 'c')    
     runIn(contactDelay * 60, cycleOn)
 }
 
@@ -1339,6 +1344,7 @@ def moisture(int i)
     if (lastHumDate < yesterday) return [1, "Please check ${settings."sensor${i}"}, no humidity reports in the last ${hours} hours\n"]
 
     float latestHum = settings."sensor${i}".latestValue('humidity').toFloat()	// state = 29, value = 29.13
+    int intHum = latestHum.toInteger()
     int spHum = getDrySp(i)
     if (!learn)
     {
@@ -1422,16 +1428,16 @@ def moisture(int i)
         	state.tpwMap[i-1] = newTPW		// store the new tpw
         	state.dpwMap[i-1] = initDPW(i)	// may need to recalculate days per week
         	def adjusted = newTPW - tpw // so that the next note is accurate
-    		moistureSum = "${settings."name${i}"}, Skipping: settings."sensor${i}"} reads ${latestHum}% SP is ${spHum}%, adjusted by ${adjusted} mins to ${newTPW} mins/week\n"
+    		moistureSum = "${settings."name${i}"}, Skipping: ${settings."sensor${i}"} reads ${latestHum}% SP is ${spHum}%, adjusted by ${adjusted} mins to ${newTPW} mins/week\n"
         } else {							// not changing tpw
-        	moistureSum = "${settings."name${i}"}, Skipping: ${settings."sensor${i}"} reads ${latestHum}%, SP is ${spHum}% (no adjustment, ${tpw} mins/week)\n"
+        	moistureSum = "${settings."name${i}"}, Skipping: ${settings."sensor${i}"} reads ${latestHum}%, SP is ${spHum}% (${tpw} mins/week)\n"
     	}
     	return [0, moistureSum]
     } else if (diffHum >= 0.0) {		// assert tpwAdjust == 0 
-        moistureSum = "${settings."name${i}"}, Watering: ${settings."sensor${i}"} reads ${latestHum}%, SP is ${spHum}% (no adjustment, ${tpw} mins/week)\n"
+        moistureSum = "${settings."name${i}"}, Watering: ${settings."sensor${i}"} reads ${latestHum}%, SP is ${spHum}% (${tpw} mins/week)\n"
         return [1, moistureSum]
     } else { 							// assert diffUm < 0.0 - never water if current sensor > SP
-    	moistureSum = "${settings."name${i}"}, Skipping: ${settings."sensor${i}"} reads ${latestHum}%, SP is ${spHum}% (no adjustment, ${tpw} mins/week)\n"
+    	moistureSum = "${settings."name${i}"}, Skipping: ${settings."sensor${i}"} reads ${latestHum}%, SP is ${spHum}% (${tpw} mins/week)\n"
     	return [0, moistureSum]
     }
     return [0, moistureSum]
@@ -1466,37 +1472,39 @@ def note(String status, String message, String type){
     switches.notify(status, message)
     if(notify)
     {
-      if (notify.contains('Daily') && type == 'd'){
-        send(message)
-      }
-      if (notify.contains('Weekly') && type == 'w'){     
-        send(message)
-      }
-      if (notify.contains('Delays') && type == 'c'){     
-        send(message)
-      }
-      if (notify.contains('Events') && type == 'i'){        
-        send(message)
-      }
-      if (notify.contains('Weather') && type == 'f'){     
-        send(message)
-      }
-      if (notify.contains('Warnings') && type == 'a'){     
-        send(message)
-      }
-      if (notify.contains('Moisture') && type == 'm'){        
-        send(message)
-	  }
+    	switch(type) {
+    		case 'd':
+      			if (notify.contains('Daily')) send(message)
+      			break
+      		case 'w':
+      			if (notify.contains('Weekly')) send(message)
+      			break
+  			case 'c':
+  				if (notify.contains('Delays')) send(message)
+      			break
+      		case 'i':
+      			if (notify.contains('Events')) send(message)
+      			break
+  			case 'f':
+				if (notify.contains('Weather')) send(message)
+      			break
+      		case 'a':
+      			if (notify.contains('Warnings')) send(message)
+      			break
+      		case 'm':
+      			if (notify.contains('Moisture')) send(message)
+      			break
+      		default:
+      			return
+	  	}
     }
 }
 
 def send(msg) {
 	if (location.contactBookEnabled && recipients) {
-
 		sendNotificationToContacts(msg, recipients, [event: true]) 
     }
     else {
-
 		sendPush( msg )
       }
 }
@@ -1525,8 +1533,8 @@ def daysAvailable(){
 }    
  
 //zone: ['Off', 'Spray', 'rotor', 'Drip', 'Master Valve', 'Pump']
-def nozzle(i){
-    def getT = settings["zone${i}"]    
+int nozzle(int i){
+    String getT = settings."zone${i}"    
     if (!getT) return 0
     switch(getT) {        
         case 'Spray':
@@ -1545,8 +1553,8 @@ def nozzle(i){
 }
  
 //plant: ['Lawn', 'Garden', 'Flowers', 'Shrubs', 'Trees', 'Xeriscape', 'New Plants']
-def plant(i){
-    def getP = settings["plant${i}"]    
+int plant(int i){
+    String getP = settings."plant${i}"    
     if(!getP) return 0
     switch(getP) {
         case 'Lawn':
@@ -1569,8 +1577,8 @@ def plant(i){
 }
  
 //option: ['Slope', 'Sand', 'Clay', 'No Cycle', 'Cycle 2x', 'Cycle 3x']
-def cycles(i){  
-    def getC = settings["option${i}"]    
+int cycles(int i){  
+    String getC = settings."option${i}"   
     if(!getC) return 2
     switch(getC) {
         case 'Slope':
@@ -1766,10 +1774,10 @@ boolean isWeather(){
 
    	if (wdata.forecast.simpleforecast.forecastday[1].high.fahrenheit.isNumber()) highTom = wdata.forecast.simpleforecast.forecastday[1].high.fahrenheit.toInteger()
    	
-    def weatherString = "${city} weather\n Today: ${highToday}F"
+    def weatherString = "${city} weather\n TDA: ${highToday}F"
     if (isRain) weatherString += ",  ${qpfTodayIn}in rain (${Math.round(popToday)}%)"
-    weatherString += "\n Tomorrow: ${highTom}F"
-    if (isRain) weatherString += ",  ${qpfTomIn}in rain (${Math.round(popTom)}%)\n Yesterday: ${YRain}in rain"
+    weatherString += "\n TMW: ${highTom}F"
+    if (isRain) weatherString += ",  ${qpfTomIn}in rain (${Math.round(popTom)}%)\n YDA: ${YRain}in rain"
     
     if (isSeason)
     {   
