@@ -1027,7 +1027,7 @@ def checkRunMap(){
         state.run = true
         state.startTime = null
         runIn(60, cycleOn)			// start water
-        runNowMap = "${app.label} watering will begin in 1 minute:\n" + runNowMap
+        runNowMap = "${app.label} watering begins in 1 minute,\nTotal runtime: ${state.totalTime} minutes:\n" + runNowMap
         note('active', "${runNowMap}", 'd')
     }
     else {
@@ -1123,11 +1123,10 @@ def cycleLoop(int i)
     //if ("${settings["pumpDelay"]}" != "null") pDelay = "${settings["pumpDelay"]}" as Integer
     if ((settings.pumpDelay != null) && settings.pumpDelay.isNumber()) pDelay = settings.pumpDelay.toInteger()
     
-    totalTime += pDelay * totalCycles  // add in the pump startup and inter-zone delays
+    totalTime += Math.round(((pDelay * totalCycles) / 60) + 0.05)  // add in the pump startup and inter-zone delays
     state.totalTime = totalTime
     state.startTime = null
     state.pauseTime = null
-    note ( 'moisture', "${app.label}\nDuration: ${totalTime} minutes", 'd')
     
     //send settings to Spruce Controller
     switches.settingsMap(timeMap,4002)
@@ -1185,9 +1184,9 @@ def doorClosed(evt){
 		def elapsedTime = (new Date(now() + (60000 * contactDelay).toLong())) - state.pauseTime
     	def finishTime = (state.startTime + state.totalTime + elapsedTime).format('EEEE @ h:mm a', location.timeZone) 
     	state.pauseTime = null
-    	newString = "\nnew ETC: ${finishTime}"
+    	newString = "\nNew ETC: ${finishTime}"
 	}
-    note('active', "${contact} closed ${switches} will resume watering in ${contactDelay} minute(s)" + newString, 'w')    
+    note('active', "${contact} closed, ${switches} will resume watering in ${contactDelay} minute(s)" + newString, 'w')    
     runIn(contactDelay * 60, cycleOn)
 }
 
