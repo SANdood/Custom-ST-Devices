@@ -711,7 +711,11 @@ String display(String i){
     if (settings."zone${i}") displayString += settings."zone${i}" + " : "
     if (settings."plant${i}") displayString += settings."plant${i}" + " : "
     if (settings."option${i}") displayString += settings."option${i}" + " : "
-    if (settings."sensor${i}") displayString += settings."sensor${i}" + "=${getDrySp(i)}% : "
+    int j = i.toInteger()
+    if (settings."sensor${i}") {
+    	displayString += settings."sensor${i}"
+        displayString += "=${getDrySp(j)}% : "
+    }
     if ((runTime != 0) && (dpw != 0)) displayString += "${runTime} minutes, ${dpw} days per week"
     return displayString
 }
@@ -1372,8 +1376,8 @@ def moisture(int i)
         if (state.tpwMap[i-1] != newTPW) {	// are we changing the tpw?
         	state.tpwMap[i-1] = newTPW		// store the new tpw
         	state.dpwMap[i-1] = initDPW(i)	// may need to recalculate days per week
-        	def adjusted = newTPW - tpw // so that the next note is accurate
-    		moistureSum = "${settings."name${i}"}, Skipping: settings."sensor${i}"} reads ${latestHum}% SP is ${spHum}%, adjusted by ${adjusted} mins to ${newTPW} mins/week\n"
+        	int adjusted = newTPW - tpw // so that the next note is accurate
+    		moistureSum = "${settings."name${i}"}, Skipping: ${settings."sensor${i}"} reads ${latestHum}% SP is ${spHum}%, adjusted by ${adjusted} mins to ${newTPW} mins/week\n"
         } else {							// not changing tpw
         	moistureSum = "${settings."name${i}"}, Skipping: ${settings."sensor${i}"} reads ${latestHum}%, SP is ${spHum}% (no adjustment, ${tpw} mins/week)\n"
     	}
@@ -1680,10 +1684,10 @@ boolean isWeather(){
    	if (wdata.forecast.simpleforecast.forecastday[0].high.fahrenheit.isNumber()) highToday = wdata.forecast.simpleforecast.forecastday[0].high.fahrenheit.toInteger()
    	if (wdata.forecast.simpleforecast.forecastday[1].high.fahrenheit.isNumber()) highTom = wdata.forecast.simpleforecast.forecastday[1].high.fahrenheit.toInteger()
    	
-    def weatherString = "${city} weather\n Today: ${highToday}F"
+    def weatherString = "${city} weather\n TDA: ${highToday}F"
     if (isRain) weatherString += ",  ${qpfTodayIn}in rain (${Math.round(popToday)}%)"
-    weatherString += "\n Tomorrow: ${highTom}F"
-    if (isRain) weatherString += ",  ${qpfTomIn}in rain (${Math.round(popTom)}%)\n Yesterday: ${YRain}in rain"
+    weatherString += "\n TMW: ${highTom}F"
+    if (isRain) weatherString += ",  ${qpfTomIn}in rain (${Math.round(popTom)}%)\n YDA: ${YRain}in rain"
     
     if (isSeason)
     {   
