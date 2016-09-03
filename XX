@@ -983,7 +983,7 @@ def cycleOn(){
                 def finishTime = new Date(now() + (60000 * state.totalTime).toLong()).format('EEEE @ h:mm a', location.timeZone)
                 newString = "\nETC: ${finishTime}"
             }
-            note('active', "${app.label} starting" + newString, 'd')
+            note('active', "${app.label} starting${newString}", 'd')
             state.pauseTime = null
             resume()
         }
@@ -1049,7 +1049,9 @@ def checkRunMap(){
         state.run = true
         state.startTime = null
         runIn(60, cycleOn)			// start water
-        runNowMap = "${app.label} watering begins in 1 minute,\nTotal runtime: ${state.totalTime} minutes:\n" + runNowMap
+        int hours = state.totalTime / 60			// DON'T Math.round this one
+        int mins = state.totalTime - (hours * 60)
+        runNowMap = "${app.label} watering in 1 minute,\nRun time: ${hours} hours & ${mins} minutes:\n" + runNowMap
         note('active', "${runNowMap}", 'd')
     }
     else {
@@ -1155,7 +1157,7 @@ def cycleLoop(int i)
     //if ("${settings["pumpDelay"]}" != "null") pDelay = "${settings["pumpDelay"]}" as Integer
     if ((settings.pumpDelay != null) && settings.pumpDelay.isNumber()) pDelay = settings.pumpDelay.toInteger()
     
-    totalTime += pDelay * totalCycles  // add in the pump startup and inter-zone delays
+    totalTime += Math.round(((pDelay * totalCycles) / 60.0) + 0.5)  // add in the pump startup and inter-zone delays
     state.totalTime = totalTime
     state.startTime = null
     state.pauseTime = null
@@ -1190,7 +1192,7 @@ def writeCycles(){
 }
 
 def resume(){
-	log.debug 'resume()'
+	//log.debug 'resume()'
 	switches.on()    
 }
 
@@ -1201,12 +1203,12 @@ def syncOn(evt){
        	def finishTime = new Date(now() + (30000 + (60000 * state.totalTime)).toLong()).format('EEEE @ h:mm a', location.timeZone) // add in the 30 second delay
        	newString = "\nETC: ${finishTime}"
     }
-    note('active', "${sync} complete, starting scheduled program" + newString, 'i')
+    note('active', "${sync} done, starting ${app.label}${newString}", 'i')
     runIn(30, cycleOn)
 }
 
 def doorOpen(evt){
-    note('pause', "${contact} opened, ${switches} paused watering", 'c')
+    note('pause', "${contact} opened, ${switches} watering paused", 'c')
     unsubscribe(switches)
     subscribe contact, 'contact.closed', doorClosed
     switches.off()
@@ -1221,7 +1223,7 @@ def doorClosed(evt){
     	state.pauseTime = null
     	newString = "\nNew ETC: ${finishTime}"
 	}
-    note('active', "${contact} closed, ${switches} will resume watering in ${contactDelay} minute(s)" + newString, 'c')    
+    note('active', "${contact} closed, ${switches} will resume watering in ${contactDelay} minute(s)${newString}", 'c')    
     runIn(contactDelay * 60, cycleOn)
 }
 
@@ -1422,7 +1424,7 @@ def moisture(int i)
         	state.tpwMap[i-1] = newTPW		// store the new tpw
         	state.dpwMap[i-1] = initDPW(i)	// may need to recalculate days per week
         	def adjusted = newTPW - tpw // so that the next note is accurate
-    		moistureSum = "${settings."name${i}"}, Skipping: settings."sensor${i}"} reads ${latestHum}% SP is ${spHum}%, adjusted by ${adjusted} mins to ${newTPW} mins/week\n"
+    		moistureSum = "${settings."name${i}"}, Skipping: ${settings."sensor${i}"} reads ${latestHum}% SP is ${spHum}%, adjusted by ${adjusted} mins to ${newTPW} mins/week\n"
         } else {							// not changing tpw
         	moistureSum = "${settings."name${i}"}, Skipping: ${settings."sensor${i}"} reads ${latestHum}%, SP is ${spHum}% (no adjustment, ${tpw} mins/week)\n"
     	}
@@ -1766,10 +1768,10 @@ boolean isWeather(){
 
    	if (wdata.forecast.simpleforecast.forecastday[1].high.fahrenheit.isNumber()) highTom = wdata.forecast.simpleforecast.forecastday[1].high.fahrenheit.toInteger()
    	
-    def weatherString = "${city} weather\n Today: ${highToday}F"
+    def weatherString = "${city} weather\n TDA: ${highToday}F"
     if (isRain) weatherString += ",  ${qpfTodayIn}in rain (${Math.round(popToday)}%)"
-    weatherString += "\n Tomorrow: ${highTom}F"
-    if (isRain) weatherString += ",  ${qpfTomIn}in rain (${Math.round(popTom)}%)\n Yesterday: ${YRain}in rain"
+    weatherString += "\n TMW: ${highTom}F"
+    if (isRain) weatherString += ",  ${qpfTomIn}in rain (${Math.round(popTom)}%)\n YDA: ${YRain}in rain"
     
     if (isSeason)
     {   
@@ -2157,3 +2159,4 @@ def zoneSetPage16(){
 	state.app = 16
     zoneSetPage()
     }
+
