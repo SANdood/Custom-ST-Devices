@@ -789,6 +789,7 @@ def updated() {
 def installSchedule(){
 	state.seasonAdj = 100
     state.weekseasonAdj = 0
+    if (!state.daysAvailable) state.daysAvailable = 7	// just to be sure that it is initialized
     unsubscribe()
     unschedule()
     state.run = false
@@ -804,7 +805,7 @@ def installSchedule(){
         schedule("${randomSeconds} 57 23 1/1 * ? *", getRainToday)		// capture today's rainfall just before midnight
 
         writeSettings()
-        note('schedule', "${app.label} schedule set to start at ${startTimeString()}", 'i')
+        note('schedule', "${app.label} set to start at ${startTimeString()}", 'i')
     }
     else note('disable', 'Automatic watering turned off or incomplete setup.', 'w')
 }
@@ -870,7 +871,7 @@ def manualStart(evt){
 			switches.programWait()
             state.run = true        
             runNowMap = "${app.label} manually started, watering in 1 minute:\n" + runNowMap
-            note('active', "${runNowMap}", 'd')                      
+            note('active', runNowMap, 'd')                      
             runIn(60, cycleOn)   //start water program
         }
         else {
@@ -948,7 +949,7 @@ def cycleOn(){
             if ( !syncSwitch.contains('off') || syncStatus.contains('active') || syncStatus.contains('pause') || syncStatus.contains('season') ) {
                 subscribe sync, 'switch.off', syncOn
                 if (!state.startTime) state.pauseTime = null		// haven't started yet
-                note('pause', "Waiting for ${sync} to complete before starting schedule", 'w')
+                note('pause', "Waiting for ${sync} to complete before starting ${app.label}", 'w')
                 return
             }
         }
@@ -964,9 +965,9 @@ def cycleOn(){
             if (!state.startTime) state.startTime = new Date()
             if (state.totalTime) {
                 String finishTime = new Date(now() + (60000 * state.totalTime).toLong()).format('EEEE @ h:mm a', location.timeZone)
-                newString = "\nETC: " + finishTime + "    "
+                newString = " - ETC: " + finishTime
             }
-            note('active', "${app.label} starting " + newString, 'd')
+            note('active', "${app.label} starting" + newString, 'd')
             state.pauseTime = null
             resume()
         }
@@ -992,7 +993,7 @@ def cycleOff(evt){
     if (state.run == true && (contact == null || !contact.currentValue('contact').contains('open'))){    
     	state.finishTime = new Date()
     	String finishTime = state.finishTime.format('h:mm a', location.timeZone)
-    	note('finished', "${app.label}\nfinished watering at ${finishTime}", 'i')
+    	note('finished', "${app.label} finished watering at ${finishTime}", 'i')
     } else
     	log.debug "${switches} turned off, but ${contact} is open"
 	state.run = false
@@ -1025,7 +1026,9 @@ def checkRunMap(){
         runIn(60, cycleOn)			// start water
         int hours = state.totalTime / 60			// DON'T Math.round this one
         int mins = state.totalTime - (hours * 60)
-        runNowMap = "${app.label} watering in 1 minute,\nRun time: ${hours} hours & ${mins} minutes:\n" + runNowMap
+        String hourString = ''
+        if (hours > 0) hourString = "${hours} hours &"
+        runNowMap = "${app.label} watering in 1 minute,\nRun time: ${hourString} ${mins} minutes:\n" + runNowMap
         note('active', runNowMap, 'd')
     }
     else {
@@ -1103,7 +1106,7 @@ def cycleLoop(int i)
                 		rtime = Math.round((rtime / cyc) + 0.5)                
 					totalCycles += cyc
 					totalTime += (rtime * cyc)
-                	runNowMap += "${settings["name${zone}"]}: ${cyc} x ${rtime} min\n"
+                	runNowMap += "${settings."name${zone}"}: ${cyc} x ${rtime} min\n"
                 	if (isDebug) log.debug "Zone ${zone} Map: ${cyc} x ${rtime} min - totalTime: ${totalTime}"
             	}
         	}
@@ -1115,7 +1118,7 @@ def cycleLoop(int i)
         zone++  
     }
 	if (soilString) {
-        note('moisture', "Moisture Sensors:\n${soilString}",'m')
+        note('moisture', "Moisture Sensors:\n" + soilString,'m')
     }
         
     if (!runNowMap) return runNowMap			// nothing to run today
@@ -1163,7 +1166,7 @@ def syncOn(evt){
     String newString = ''
     if (state.totalTime) {
        	String finishTime = new Date(now() + (30000 + (60000 * state.totalTime)).toLong()).format('EEEE @ h:mm a', location.timeZone) // add in the 30 second delay
-       	newString = '\nETC: ' + finishTime + '    '
+       	newString = ' - ETC: ' + finishTime + '    '
     }
     note('active', "${sync} done, starting ${app.label}" + newString, 'i')
     runIn(30, cycleOn)
@@ -1183,15 +1186,15 @@ def doorClosed(evt){
 		def elapsedTime = (new Date(now() + (60000 * contactDelay).toLong())) - state.pauseTime
     	String finishTime = (state.startTime + state.totalTime + elapsedTime).format('EEEE @ h:mm a', location.timeZone) 
     	state.pauseTime = null
-    	newString = '\nNew ETC: ' + finishTime
+    	newString = ' - New ETC: ' + finishTime
 	}
-    note('active', "${contact} closed, ${app.label} will resume watering in ${contactDelay} minute(s)" + newString, 'c')    
+    note('active', "${contact} closed, ${app.label} will resume watering in ${contactDelay} minute(s)" + newString, 'i')    
     runIn(contactDelay * 60, cycleOn)
 }
 
 //Initialize Days per week, based on TPW, perDay and daysAvailable settings
 int initDPW(int zone){
-	log.debug "initDPW(${zone})"
+	//log.debug "initDPW(${zone})"
 	if(!state.dpwMap) state.dpwMap = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
 	
 	//int zone = i.toInteger()
@@ -1208,7 +1211,7 @@ int initDPW(int zone){
 	    if(dpw == 3 && days && (days.contains('Even') || days.contains('Odd')) && !(days.contains('Even') && days.contains('Odd')))
 			if((tpw.toFloat() / perDay) < 3.0) dpw = 2 else dpw = 4
 		int daycheck
-		if (state.daysAvailable) daycheck = state.daysavailable else daycheck = daysAvailable()
+		if (state.daysAvailable) daycheck = state.daysAvailable else daycheck = daysAvailable()
     	if(daycheck < dpw) dpw = daycheck
     }
 	state.dpwMap[zone-1] = dpw
@@ -1257,7 +1260,7 @@ int initTPW(int zone) {
     }
 
 	state.tpwMap[zone-1] = tpw
-    log.debug "initTPW(${zone}) tpw: ${tpw}"
+    // log.debug "initTPW(${zone}) tpw: ${tpw}"
     return tpw
 }
 
@@ -1323,18 +1326,18 @@ def moisture(int i)
     }
 	
 	int minimum = cpd * dpw				// minimum of 1 minute per scheduled days per week (note - can be 1*1=1)
-	if (minimum == 0) minimum = 7		// shouldn't happen - safety check
+	if (minimum == 0) minimum = state.daysAvailable * cpd		// shouldn't happen - safety check
 	int tpwAdjust = 0
 	
     if (diffHum > 0.01) { 				// only adjust tpw if more than 1% of target SP
   		tpwAdjust = Math.round(((tpwFloat * diffHum) + 0.5) * dpwFloat * cpdFloat)	// Compute adjustment as a function of the current tpw
-    	float adjFactor = 200.0 / state.daysAvailable().toFloat()		// Limit adjustments to 200% per week
+    	float adjFactor = 2.0 / state.daysAvailable.toFloat()		// Limit adjustments to 200% per week - spread over available days
   		if (tpwAdjust > (tpwFloat * adjFactor)) tpwAdjust = Math.round((tpwFloat * adjFactor) + 0.5) 		// limit fast rise
 		if (tpwAdjust < minimum) tpwAdjust = minimum      // but we need to move at least 1 minute per cycle per day to actually increase the watering time
     } else if (diffHum < -0.01) {
     	if (diffHum < -0.05) diffHum = -0.05			// try not to over-compensate for a heavy rainstorm...
     	tpwAdjust = Math.round(((tpwFloat * diffHum) - 0.5) * dpwFloat * cpdFloat)
-    	float adjFactor = -66.667 / state.daysAvailable.toFloat()		// Limit adjustments to 66% per week
+    	float adjFactor = -0.6667 / state.daysAvailable.toFloat()		// Limit adjustments to 66% per week
     	if (tpwAdjust < (tpwFloat * adjFactor)) tpwAdjust = Math.round((tpwFloat * adjFactor) - 0.5)	// limit slow decay to 12.5% of tpw per day
 		if (tpwAdjust > (-1 * minimum)) tpwAdjust = -1 * minimum // but we need to move at least 1 minute per cycle per day to actually increase the watering time
     }
@@ -1576,7 +1579,7 @@ def setSeason() {
     		//state.dpwMap[zone-1] = initDPW(zone)
 //    		if ((tpw != 0) && (state.weekseasonAdj != 0)) {
 //            	log.debug "Zone ${zone}: seasonally adjusted by ${state.weekseasonAdj-100}% to ${tpw}"
-    		}
+//    		}
     	}
         zone++
     }       
@@ -2092,4 +2095,3 @@ def zoneSetPage16(){
 	state.app = 16
     zoneSetPage()
     }
-
