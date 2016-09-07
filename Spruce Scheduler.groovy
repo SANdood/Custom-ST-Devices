@@ -210,14 +210,14 @@ private String syncString(){
 
 private String notifyString(){
 	String notifyString = ''
-	if(notify) {
-      if (notify.contains('Daily')) notifyString += ' Daily'
-      if (notify.contains('Weekly')) notifyString += ' Weekly'
-      if (notify.contains('Delays')) notifyString += ' Delays'
-      if (notify.contains('Warnings')) notifyString += ' Warnings'
-      if (notify.contains('Weather')) notifyString += ' Weather'
-      if (notify.contains('Moisture')) notifyString += ' Moisture'
-      if (notify.contains('Events')) notifyString += ' Events'
+	if(settings.notify) {
+      if (settings.notify.contains('Daily')) notifyString += ' Daily'
+      if (settings.notify.contains('Weekly')) notifyString += ' Weekly'
+      if (settings.notify.contains('Delays')) notifyString += ' Delays'
+      if (settings.notify.contains('Warnings')) notifyString += ' Warnings'
+      if (settings.notify.contains('Weather')) notifyString += ' Weather'
+      if (settings.notify.contains('Moisture')) notifyString += ' Moisture'
+      if (settings.notify.contains('Events')) notifyString += ' Events'
    }
    if(notifyString == '')
    	  notifyString = ' None'
@@ -794,23 +794,42 @@ def updated() {
 }
  
 def installSchedule(){
-	state.seasonAdj = 100
-    state.weekseasonAdj = 0
+	if (!state.seasonAdj) state.seasonAdj = 100
+    if (!state.weekseonsAdj) state.weekseasonAdj = 0
     if (!state.daysAvailable) state.daysAvailable = 7	// just to be sure that it is initialized
-    unsubscribe()
-    unschedule()
-    state.run = false
-    int randomOffset = 0
+    
+    if (state.run && (state.run == true)) {									// Hmmm...seems we were running before...
+    	if (switches.currentValue('switch') == 'off') { // ...but not any longer
+    		state.run = false
+	    	unsubscribe()
+	    	unschedule()
+    	} else {										// seems an instance of this schedule is still running!
+    		// don't unsubscribe so that we can handle pause and finished events
+    		// don't unschedule any pending runIn()s so that the events continue as planned
+    		// leave state.run as is (true)
+    		// maybe should re-seubscribe to sync & contact devices
+    	}
+    } else {
+    	state.run = false								// nope, wasn't already running
+    	unsubscribe()									// reset the baseline subscriptions
+    	unschedule()									// unschedule everything (just in case we left a runIn() hanging
+    }
+    // unschedule()
+    //  state.run = false
+    
+    Random rand = new Random()
+    long randomOffset = 0
     
     if (enableManual) subscribe(switches, 'switch.programOn', manualStart)
-    randomOffset = getRandomNumber(1) * 1000	//random number added to start time so multiple schedules do not have identical time
-    if (switches && startTime && enable){    	
+    
+    // always collect rainfall
+    int randomSeconds = rand.nextInt(59)
+    schedule("${randomSeconds} 57 23 1/1 * ? *", getRainToday)		// capture today's rainfall just before midnight
+
+    if (switches && startTime && enable){
+    	randomOffset = rand.nextInt(59) * 1000
         def checktime = timeToday(startTime, location.timeZone).getTime() + randomOffset
     	schedule(checktime, preCheck)	//check weather & Days
-		Random rand = new Random()
-    	int randomSeconds = rand.nextInt(59)    	
-        schedule("${randomSeconds} 57 23 1/1 * ? *", getRainToday)		// capture today's rainfall just before midnight
-
         writeSettings()
         note('schedule', "${app.label} set to start at ${startTimeString()}", 'i')
     }
@@ -869,17 +888,18 @@ int getRandomNumber(int num){
 
 //start manual schedule
 def manualStart(evt){
-	if (enableManual && state.run == false){
+	if (enableManual && (state.run == false)){
         def runNowMap = []
         runNowMap = cycleLoop(0)    
         if (runNowMap)
         { 
 			subscribe switches, 'switch.off', cycleOff
 			switches.programWait()
-            state.run = true        
+            state.run = true
+            runIn(60, cycleOn)   //start water program
+            
             runNowMap = "${app.label} manually started, watering in 1 minute:\n" + runNowMap
             note('active', runNowMap, 'd')                      
-            runIn(60, cycleOn)   //start water program
         }
         else {
             //switches.programOff()
@@ -898,9 +918,8 @@ boolean busy(){
     }
     
     // Check that the controller isn't running some other schedule
-    def switchVal = switches.currentValue('switch')
-
-    if (switchVal.contains('off')){			// && !switchStat.contains('active') && !switchStat.contains('season') && !switchStat.contains('pause') && !switchStat.contains('moisture')) {
+    //def switchVal = switches.currentValue('switch')
+    if (switches.currentValue('switch') == 'off') {	// && !switchStat.contains('active') && !switchStat.contains('season') && !switchStat.contains('pause') && !switchStat.contains('moisture')) {
     	return false				// nope - the controller isn't busy
     }    
 
@@ -950,11 +969,12 @@ def cycleOn(){
     
 	if (state.run == true){				//block if manually stopped during precheck which goes to cycleOff
         if (sync != null ) {
-            String syncSwitch = sync.currentValue('switch')
-            String syncStatus = sync.currentValue('status')
-            if ( !syncSwitch.contains('off') || syncStatus.contains('active') || syncStatus.contains('pause') || syncStatus.contains('season') ) {
+            // String syncSwitch = sync.currentValue('switch')
+            //String syncStatus = sync.currentValue('status')
+//            if ( !syncSwitch.contains('off') || syncStatus.contains('active') || syncStatus.contains('pause') || syncStatus.contains('season') ) {
+			if ((sync.currentSwitch != 'off') || sync.currentStatus.contains('pause')) {
                 subscribe sync, 'switch.off', syncOn
-                if (!state.startTime) state.pauseTime = null		// haven't started yet
+                if (!state.startTime && state.pauseTime) state.pauseTime = null		// haven't started yet
                 note('pause', "Waiting for ${sync} to complete before starting ${app.label}", 'w')
                 return
             }
@@ -966,16 +986,18 @@ def cycleOn(){
             // All clear, let's start running!
             subscribe switches, 'switch.off', cycleOff
             subscribe contact, 'contact.open', doorOpen
-
+            resume()
+            
+            // send the notification AFTER we start the controller (in case we run over our execution time limit)
             String newString = ''
-            if (!state.startTime) state.startTime = new Date()
+            state.startTime = new Date()
+            if (state.pauseTime) state.pauseTime = null
             if (state.totalTime) {
                 String finishTime = new Date(now() + (60000 * state.totalTime).toLong()).format('EEEE @ h:mm a', location.timeZone)
-                newString = " - ETC: " + finishTime
+                newString = ' - ETC: ' + finishTime
             }
             note('active', "${app.label} starting" + newString, 'd')
-            state.pauseTime = null
-            resume()
+
         }
 
         else {
@@ -994,6 +1016,7 @@ def cycleOff(evt){
 	if (contact) unsubscribe(contact)
     unsubscribe(switches)
     switches.programOff()
+    
     if (enableManual) subscribe(switches, 'switch.programOn', manualStart)
     // if the control contact is closed, we are done...else we're waiting for it to close
     if (state.run == true && (contact == null || !contact.currentValue('contact').contains('open'))){    
@@ -1001,14 +1024,14 @@ def cycleOff(evt){
     	String finishTime = state.finishTime.format('h:mm a', location.timeZone)
     	note('finished', "${app.label} finished watering at ${finishTime}", 'i')
     } else
-    	log.debug "${switches} turned off, but ${contact} is open"
+    	log.debug "${switches} turned off"
 	state.run = false
 }
 
 //run check each day at scheduled time
 def checkRunMap(){
     // Create weekly water summary, if requested, on Sunday	
-    if(notify && notify.contains('Weekly') && (getWeekDay() == 3))
+    if(settings.notify && settings.notify.contains('Weekly') && (getWeekDay() == 3))
     {
     	int zone = 1
         String zoneSummary = ''
@@ -1028,13 +1051,22 @@ def checkRunMap(){
     
     if (runNowMap) { 
         state.run = true
-        state.startTime = null
         runIn(60, cycleOn)			// start water
-        int hours = state.totalTime / 60			// DON'T Math.round this one
-        int mins = state.totalTime - (hours * 60)
-        String hourString = ''
-        if (hours > 0) hourString = "${hours} hours &"
-        runNowMap = "${app.label} watering in 1 minute,\nRun time: ${hourString} ${mins} minutes:\n" + runNowMap
+        
+        if (state.startTime) state.startTime = null
+        if (state.pauseTime) state.pauseTime = null
+        
+
+        
+        String newString = ''
+        if (state.totalTime) {
+        	int hours = state.totalTime / 60			// DON'T Math.round this one
+        	int mins = state.totalTime - (hours * 60)
+        	String hourString = ''
+        	if (hours > 0) hourString = "${hours} hours &"
+        	newString = "Run time: ${hourString} ${mins} minutes:\n"
+        }
+        runNowMap = "${app.label} watering in 1 minute,\n" + newString + runNowMap
         note('active', runNowMap, 'd')
     }
     else {
@@ -1078,8 +1110,8 @@ def cycleLoop(int i)
 	          	if (days && (days.contains('Even') || days.contains('Odd'))) {
             		def daynum = new Date().format('dd', location.timeZone)
             		int dayint = Integer.parseInt(daynum)
-        			if(days.contains('Odd') && (dayint +1) % Math.round(31 / (dpw * 4)) == 0) runToday = 1
-          			if(days.contains('Even') && dayint % Math.round(31 / (dpw * 4)) == 0) runToday = 1
+        			if(days.contains('Odd') && (((dayint +1) % Math.round(31 / (dpw * 4))) == 0)) runToday = 1
+          			if(days.contains('Even') && ((dayint % Math.round(31 / (dpw * 4))) == 0)) runToday = 1
           		} else {
             		int weekDay = getWeekDay()-1
             		def dpwMap = getDPWDays(dpw)
@@ -1090,7 +1122,7 @@ def cycleLoop(int i)
           	}
 			
 			// OK, we're supposed to run (or at least adjust the sensors)
-          	if(runToday!=0) 
+          	if(runToday==1) 
           	{
 				def soil
             	if (i == 0) soil = moisture(0) 	// manual
@@ -1128,18 +1160,20 @@ def cycleLoop(int i)
     }
         
     if (!runNowMap) return runNowMap			// nothing to run today
-    
+
+    //send settings to Spruce Controller
+    switches.settingsMap(timeMap,4002)
+	runIn(30, writeCycles)
+	
+	// meanwhile, calculate our total run time
     int pDelay = 0
     if ((pumpDelay != null) && pumpDelay.isNumber()) pDelay = pumpDelay.toInteger()
     
     totalTime += Math.round(((pDelay * (totalCycles-1)) / 60.0) + 0.5)  // add in the pump startup and inter-zone delays
     state.totalTime = totalTime
-    state.startTime = null
-    state.pauseTime = null
+    if (state.startTime) state.startTime = null		// haven't started yet
+    if (state.pauseTime) state.pauseTime = null		// and we haven't paused yet
 
-    //send settings to Spruce Controller
-    switches.settingsMap(timeMap,4002)
-	runIn(30, writeCycles)
     return runNowMap += pumpMap    
 }
 
@@ -1169,24 +1203,28 @@ def resume(){
 
 def syncOn(evt){
     unsubscribe(sync)
+    runIn(30, cycleOn)
+    
     String newString = ''
 //    if (state.totalTime) {
 //       	String finishTime = new Date(now() + (30000 + (60000 * state.totalTime)).toLong()).format('EEEE @ h:mm a', location.timeZone) // add in the 30 second delay
 //       	newString = ' - ETC: ' + finishTime + '    '
 //    }
     note('active', "${sync} finished, starting ${app.label} in 30 seconds" /* + newString*/, 'i')
-    runIn(30, cycleOn)
+
 }
 
 def doorOpen(evt){
-    note('pause', "${contact} opened, ${app.label} watering paused", 'c')
     unsubscribe(switches)
     subscribe contact, 'contact.closed', doorClosed
     switches.off()
     state.pauseTime = new Date()
+    note('pause', "${contact} opened, ${app.label} watering paused", 'c')
 }
      
 def doorClosed(evt){
+	runIn(contactDelay * 60, cycleOn)
+	
 	String newString = ''
 	if (state.pauseTIme && state.startTime) {
 		def elapsedTime = (new Date(now() + (60000 * contactDelay).toLong())) - state.pauseTime
@@ -1195,7 +1233,6 @@ def doorClosed(evt){
     	newString = ' - New ETC: ' + finishTime
 	}
     note('active', "${contact} closed, ${app.label} will resume watering in ${contactDelay} minute(s)" + newString, 'i')    
-    runIn(contactDelay * 60, cycleOn)
 }
 
 //Initialize Days per week, based on TPW, perDay and daysAvailable settings
@@ -1420,30 +1457,32 @@ int getDrySp(int i){
 
 //notifications to device, pushed if requested
 def note(String status, String message, String type){
-	log.debug status+': '+ message
+
     switches.notify(status, message)
-    if(notify) {
+    log.debug status+': '+ message
+    
+    if(settings.notify) {
     	switch(type) {
     		case 'd':
-      			if (notify.contains('Daily')) send(message)
+      			if (settings.notify.contains('Daily')) sendIt(message)
       			break
       		case 'w':
-      			if (notify.contains('Weekly')) send(message)
+      			if (settings.notify.contains('Weekly')) sendIt(message)
       			break
   			case 'c':
-  				if (notify.contains('Delays')) send(message)
+  				if (settings.notify.contains('Delays')) sendIt(message)
       			break
       		case 'i':
-      			if (notify.contains('Events')) send(message)
+      			if (settings.notify.contains('Events')) sendIt(message)
       			break
   			case 'f':
-				if (notify.contains('Weather')) send(message)
+				if (settings.notify.contains('Weather')) sendIt(message)
       			break
       		case 'a':
-      			if (notify.contains('Warnings')) send(message)
+      			if (settings.notify.contains('Warnings')) sendIt(message)
       			break
       		case 'm':
-      			if (notify.contains('Moisture')) send(message)
+      			if (settings.notify.contains('Moisture')) sendIt(message)
       			break
       		default:
       			return
@@ -1451,7 +1490,7 @@ def note(String status, String message, String type){
     }
 }
 
-def send(msg) {
+def sendIt(String msg) {
 	if (location.contactBookEnabled && recipients) {
 		sendNotificationToContacts(msg, recipients, [event: true]) 
     }
@@ -1551,7 +1590,7 @@ int cycles(int i){
 //check if day is allowed
 boolean isDay() {    
     // log.debug "day check"
-    if (!days) return true		// every day is 
+    if (!days) return true		// every day is allowed
      
     def daynow = new Date()
     String today = daynow.format('EEEE', location.timeZone)    
@@ -1676,7 +1715,10 @@ boolean isWeather(){
 		if (wdata.current_observation.precip_today_in.isNumber()) {
        		TRain = wdata.current_observation.precip_today_in.toFloat()
     	}
-    	if (TRain > qpfTodayIn) qpfTodayIn = TRain	// already have more rain than forecast for today
+    	if (TRain > (qpfTodayIn * (popToday / 100.0))) {
+    		qpfTodayIn = TRain	// already have more rain than forecast for today
+    		popToday = 100		// we KNOW this rain happened
+    	}
 
     	// Get yesterday's rainfall
     	int day = getWeekDay()
@@ -1799,10 +1841,10 @@ boolean isWeather(){
         	note('raintoday', "${app.label} is skipping, ${rainStr}in of rain is probable today.", 'd')        
         	return true
     	}
-    	popRain = qpfTom * (popTom / 100.0)
+    	popRain += qpfTomIn * (popTom / 100.0)
     	if (popRain > setrainDelay){
     		String rainStr = String.format('%.2f', popRain)
-        	note('raintom', "${app.label} is skipping, ${rainStr}in of rain is probable tomorrow.", 'd')
+        	note('raintom', "${app.label} is skipping, ${rainStr}in of rain is probable today + tomorrow.", 'd')
         	return true
     	}
 	    if (weeklyRain > setrainDelay){
@@ -1832,14 +1874,18 @@ boolean isWeather(){
 boolean anySensors() {
 	int zone=1
 	while (zone <= 16) {
-		if (settings."zone${zone}" && (settings."zone${zone}" != 'Off') && settings."sensor${zone}") return true
+		def zoneStr = settings."zone${zone}"
+		if (zoneStr && (zoneStr != 'Off') && settings."sensor${zone}") return true
 		zone++
 	}
 	return false
 }
 
-def getDPWDays(dpw){
-  if(dpw == 1)
+def getDPWDays(int dpw){
+	if (dpw && (dpw.isNumber()) && (dpw >= 1) && (dpw <= 7)) {
+		return state."DPWDays${dpw}"		
+	}
+/*  if(dpw == 1)
      return state.DPWDays1
   if(dpw == 2)
      return state.DPWDays2
@@ -1853,7 +1899,7 @@ def getDPWDays(dpw){
      return state.DPWDays6
   if(dpw == 7)
      return state.DPWDays7
-  return [0,0,0,0,0,0,0]
+*/  return [0,0,0,0,0,0,0]
 }
 
 // Create a map of what days each possible DPW value will run on
