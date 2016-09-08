@@ -999,7 +999,7 @@ boolean busy(){
 }
 
 def busyOff(evt){
-	//unsubscribe(switches)    
+	//unsubscribe(switches)    // do it now, in case someone hits the switch more than once
     runIn(10, preCheck)   
 }
 
@@ -1011,18 +1011,19 @@ def preCheck(){
 		log.debug "Skipping: ${app.label} is not scheduled for today."		// Silent - no note
 		return
 	}
-	if (!busy()) {    	
-        note('active', "${app.label} starting pre-check.", 'i')
+	if (!busy()) {
 		switches.programWait()
-		
+        note('active', "${app.label} starting pre-check.", 'i')
         state.run = true		//set true before checking weather
-		runIn(30, checkRunMap)	//set checkRunMap before weather check, give isWeather 30s to complete
-       	if (!isWeather()) 
-       		state.run = true
-       	else {
-       		state.run = false
-            cycleOff()
-           	//switches.programOff()
+		runIn(30, checkRunMap)	//set checkRunMap before weather check, gives isWeather 30s to complete
+
+       	if (isWeather()) {
+       		// state.run = true
+       	// else {
+       		state.run = false						// tell checkRunMap NOT to run
+       		log.debug "preCheck(): isWeather() -> state.run = false"
+            //cycleOff()
+           	switches.programOff()
            	//state.run = false            
 		}
 	}
@@ -1044,29 +1045,22 @@ def cycleOn(){
         }
 
         // master schedule complete (or null), check the control contact
-
         if (contact == null || !contact.currentValue('contact').contains('open')) {
-
             // All clear, let's start running!
             subscribe switches, 'switch.off', cycleOff
             subscribe contact, 'contact.open', doorOpen
             resume()
             
             // send the notification AFTER we start the controller (in case we run over our execution time limit)
-
             String newString = ''
             state.startTime = new Date()
             if (state.pauseTime) state.pauseTime = null
             if (state.totalTime) {
-
-
                 String finishTime = new Date(now() + (60000 * state.totalTime).toLong()).format('EEEE @ h:mm a', location.timeZone)
                 newString = ' - ETC: ' + finishTime
             }
             note('active', "${app.label} starting" + newString, 'd')
-
         }
-
         else {
             // Ready to run, but the control contact is open, so we wait
             //subscribe switches, 'switch.off', cycleOff	// this is weird- does it allow someone to stop the schedule while in pause?
@@ -1075,7 +1069,6 @@ def cycleOn(){
 
 			//switches.programOff()
             note('pause', "${contact} opened, ${switches} paused watering", 'w')
-
         }
     }
 }
@@ -1090,12 +1083,14 @@ def cycleOff(evt){
     
     if (enableManual) subscribe(switches, 'switch.programOn', manualStart)
     // if the control contact is closed, we are done...else we're waiting for it to close
-    if (state.run == true && (contact == null || !contact.currentValue('contact').contains('open'))){    
+    // if (state.run == true && (contact == null || !contact.currentValue('contact').contains('open'))){   
+    if (state.run && !contact || contact.currentContact == 'open') {
     	state.finishTime = new Date()
     	String finishTime = state.finishTime.format('h:mm a', location.timeZone)
     	note('finished', "${app.label} finished watering at ${finishTime}", 'i')
-    } else
-    	log.debug "${switches} turned off"
+    } else {
+    	log.debug "${switches} turned off"		// is this a manual off? perhaps we should send a note?
+    }
 	state.run = false
 }
 
@@ -1110,17 +1105,16 @@ def checkRunMap(){
         while(zone <= 16) {
         	if(settings["zone${zone}"] != null && settings["zone${zone}"] != 'Off' && nozzle(zone) != 4) {
 			   zoneSummary += getaZoneSummary(zone)
-
             }
             zone++
         }
         // note() does the log.debug
-
         note('season', "Weekly water summary: ${zoneSummary}", 'w' )
     }    
     
 	//check if isWeather returned true or false before checking
     if (state.run == true){
+    	log.debug "checkRunMap(): state.run = true"
 
         //get & set watering times for today
         def runNowMap = []    
@@ -1128,15 +1122,11 @@ def checkRunMap(){
 
         if (runNowMap) { 
 
-            state.run = true
-
+            // state.run = true
             runIn(60, cycleOn)			// start water
 
             if (state.startTime) state.startTime = null
             if (state.pauseTime) state.pauseTime = null
-
-
-
             String newString = ''
             if (state.totalTime) {
                 int hours = state.totalTime / 60			// DON'T Math.round this one
