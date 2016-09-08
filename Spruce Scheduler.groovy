@@ -973,7 +973,6 @@ def manualStart(evt){
 //true if another schedule is running
 boolean busy(){
 	// Check if we are already running (somebody changed the schedule time while this schedule is running)
-
     if (state.run == true){
     	note('active', "${app.label} already running, skipping additional start", 'd')
     	return true
@@ -981,8 +980,7 @@ boolean busy(){
     
     // Check that the controller isn't running some other schedule
     //def switchVal = switches.currentValue('switch')
-
-    if (switches.currentValue('switch') == 'off') {	// && !switchStat.contains('active') && !switchStat.contains('season') && !switchStat.contains('pause') && !switchStat.contains('moisture')) {
+    if (switches.currentSwitch == 'off') {	// && !switchStat.contains('active') && !switchStat.contains('season') && !switchStat.contains('pause') && !switchStat.contains('moisture')) {
     	return false				// nope - the controller isn't busy
     }    
 
@@ -1006,20 +1004,21 @@ def busyOff(evt){
 //run check every day
 def preCheck(){	
 	unsubscribe(switches)
-    subscribe switches, 'switch.off', cycleOff
+
     if (!isDay()) {
 		log.debug "Skipping: ${app.label} is not scheduled for today."		// Silent - no note
+		if (enableManual) subscribe(switches, 'switch.programOn', manualStart)
 		return
 	}
+	subscribe switches, 'switch.off', cycleOff
+	
 	if (!busy()) {
 		switches.programWait()
-        note('active', "${app.label} starting pre-check.", 'i')
+        note('active', "${app.label} starting pre-check", 'i')
         state.run = true		//set true before checking weather
 		runIn(30, checkRunMap)	//set checkRunMap before weather check, gives isWeather 30s to complete
 
        	if (isWeather()) {
-       		// state.run = true
-       	// else {
        		state.run = false						// tell checkRunMap NOT to run
        		log.debug "preCheck(): isWeather() -> state.run = false"
             //cycleOff()
@@ -1032,10 +1031,8 @@ def preCheck(){
 //start water program
 def cycleOn(){       
     
-	if (state.run == true){				//block if manually stopped during precheck which goes to cycleOff
-
-        if (sync != null ) {
-            
+	if (state.run) {				//block if manually stopped during precheck which goes to cycleOff
+        if (sync) {
 			if ((sync.currentSwitch != 'off') || sync.currentStatus.contains('pause')) {
                 subscribe sync, 'switch.off', syncOn
                 if (!state.startTime && state.pauseTime) state.pauseTime = null		// haven't started yet
@@ -1045,7 +1042,7 @@ def cycleOn(){
         }
 
         // master schedule complete (or null), check the control contact
-        if (contact == null || !contact.currentValue('contact').contains('open')) {
+        if (!contact || contact.currentContact == 'closed') {
             // All clear, let's start running!
             subscribe switches, 'switch.off', cycleOff
             subscribe contact, 'contact.open', doorOpen
@@ -1072,7 +1069,6 @@ def cycleOn(){
         }
     }
 }
-
 
 //when switch reports off, watering program is finished
 def cycleOff(evt){
@@ -1113,7 +1109,7 @@ def checkRunMap(){
     }    
     
 	//check if isWeather returned true or false before checking
-    if (state.run == true){
+    if (state.run){
     	log.debug "checkRunMap(): state.run = true"
 
         //get & set watering times for today
@@ -1121,8 +1117,6 @@ def checkRunMap(){
         runNowMap = cycleLoop(1)
 
         if (runNowMap) { 
-
-            // state.run = true
             runIn(60, cycleOn)			// start water
 
             if (state.startTime) state.startTime = null
@@ -1140,14 +1134,14 @@ def checkRunMap(){
         }
         else {
             state.run = false 
-            switches.programOff()                   
+            unsubscribe(switches)
+            if (contact) unsubscribe(contact)
+            switches.programOff()
+            if (enableManual) subscribe(switches, 'switch.programOn', manualStart)
             note('skipping', "${app.label} - No watering today", 'd')
         }	
     }
 }
-
-
-
 
 //get todays schedule
 def cycleLoop(int i)
@@ -1171,9 +1165,8 @@ def cycleLoop(int i)
 
     while(zone <= 16)
     {
-
         rtime = 0
-
+        
         if( settings."zone${zone}" != null && settings."zone${zone}" != 'Off' && nozzle(zone) != 4 && zoneActive(zone.toString()) )
         {
 		  	// First check if we run this zone today, use either dpwMap or even/odd date
@@ -1210,14 +1203,13 @@ def cycleLoop(int i)
 				// Run this zone if soil moisture needed 
             	if ( soil[0] == 1 )
             	{
-
                 	cyc = cycles(zone)
                 	tpw = getTPW(zone)
                 	dpw = getDPW(zone)					// moisture() may have changed DPW
 
                 	rtime = calcRunTime(tpw, dpw)                
                 	//daily weather adjust if no sensor
-                	if(isSeason && (settings["sensor${zone}"] == null || !learn)) 
+                	if(isSeason && (settings."sensor${zone}" == null || !learn)) 
                 		rtime = Math.round(((rtime / cyc) * (state.seasonAdj.toFloat() / 100.0))+0.5)
                 	else 
                 		rtime = Math.round((rtime / cyc) + 0.5)                
@@ -1228,8 +1220,6 @@ def cycleLoop(int i)
             	}
         	}
 		}
-
-
         if (nozzle(zone) == 4) pumpMap += "${settings["name${zone}"]}: ${settings["zone${zone}"]} on\n"
         timeMap."${zone+1}" = "${rtime}"
         zone++  
@@ -1275,7 +1265,6 @@ def writeCycles(){
         zone++
     }
     switches.settingsMap(cyclesMap, 4001)
-
 }
 
 def resume(){
@@ -1286,24 +1275,15 @@ def resume(){
 def syncOn(evt){
     unsubscribe(sync)
     runIn(30, cycleOn)
-    
-    String newString = ''
-//    if (state.totalTime) {
-//       	String finishTime = new Date(now() + (30000 + (60000 * state.totalTime)).toLong()).format('EEEE @ h:mm a', location.timeZone) // add in the 30 second delay
-//       	newString = ' - ETC: ' + finishTime + '    '
-//    }
-
-    note('active', "${sync} finished, starting ${app.label} in 30 seconds" /* + newString*/, 'i')
-
-
+    note('active', "${sync} finished, starting ${app.label} in 30 seconds", 'i')
 }
 
 def doorOpen(evt){
-
     unsubscribe(switches)
     subscribe contact, 'contact.closed', doorClosed
     switches.programOff()
-
+	subscribe switches, 'switch.off', cycleOff		// allow turning off while in pause mode
+	
     state.pauseTime = new Date()
     note('pause', "${contact} opened, ${app.label} watering paused", 'c')
 }
@@ -1319,7 +1299,6 @@ def doorClosed(evt){
     	newString = ' - New ETC: ' + finishTime
 	}
     note('active', "${contact} closed, ${app.label} will resume watering in ${contactDelay} minute(s)" + newString, 'i')    
-
 }
 
 //Initialize Days per week, based on TPW, perDay and daysAvailable settings
