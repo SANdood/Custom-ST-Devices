@@ -851,14 +851,36 @@ def updated() {
  
 def installSchedule(){
 	if (!state.seasonAdj) state.seasonAdj = 100.0
-    if (!state.weekseonsAdj) state.weekseasonAdj = 0
+    if (!state.weekseasonAdj) state.weekseasonAdj = 0
     if (!state.daysAvailable) state.daysAvailable = 7	// just to be sure that it is initialized
     
     if (state.run) {									// Hmmm...seems we were running before...
-    	if (switches.currentValue('switch') == 'off') { // ...but not any longer
-    		state.run = false
-	    	unsubscribe()
-	    	unschedule()
+    	if (switches.currentSwitch == 'off') {
+    		if (!switches.currentStatus.contains('pause')) { // ...but not any longer
+    			state.run = false
+	    		unsubscribe()
+	    		unschedule()
+    		} else { 									// we are currently paused
+    			if ((contact == null) || contact.currentContact.contains('closed')) {
+            		subscribe switches, 'switch.off', cycleOff
+            		if (contact) subscribe contact, 'contact.open', doorOpen
+            		resume()
+            		
+            		// send the notification AFTER we start the controller (in case we run over our execution time limit)
+            		String newString = ''
+            		state.startTime = new Date()
+            		if (state.pauseTime) state.pauseTime = null
+            		if (state.totalTime) {
+                		String finishTime = new Date(now() + (60000 * state.totalTime).toLong()).format('EEEE @ h:mm a', location.timeZone)
+                		newString = ' - ETC: ' + finishTime
+            		}
+            		note('active', "${app.label} starting" + newString, 'd')
+    			} else { 								// contact is open, remain paused
+    				subscribe contact, 'contact.closed', doorClosed
+    				subscribe switches, 'switch.off', cycleOff
+    				// don't need to reset the pause timer
+    			}
+    		}
     	} else {										// seems an instance of this schedule is still running!
     		// don't unsubscribe so that we can handle pause and finished events
     		// don't unschedule any pending runIn()s so that the events continue as planned
@@ -1289,12 +1311,17 @@ def syncOn(evt){
 
 def doorOpen(evt){
     unsubscribe(switches)
-    subscribe contact, 'contact.closed', doorClosed
     switches.programOff()
-	subscribe switches, 'switch.off', cycleOff		// allow turning off while in pause mode
-	
     state.pauseTime = new Date()
+    subscribe contact, 'contact.closed', doorClosed
+//	subscribe switches, 'switch.off', cycleOff		// allow turning off while in pause mode
+	runIn(15, subOff)							// allow time for the above programOff() to complete...
+
     note('pause', "${contact} opened, ${app.label} watering paused", 'c')
+}
+
+def subOff() {
+	subscribe switches, 'switch.off', cycleOff
 }
      
 def doorClosed(evt){
@@ -1394,8 +1421,9 @@ int calcRunTime(int tpw, int dpw)
 // Check the moisture level of a zone returning dry (1) or wet (0) and adjust tpw if overly dry/wet
 def moisture(int i)
 {
-	boolean isDebug = true
+	boolean isDebug = false
 	if (isDebug) log.debug "moisture(${i})"
+	
 	// No Sensor on this zone or manual start skips moisture checking altogether
 	if (settings."sensor${i}" == null || i == 0) {     
         return [1,'']
@@ -1461,7 +1489,7 @@ def moisture(int i)
     	float sadj = state.seasonAdj - 100.0
     	if (sadj > 0.0) plus = '+'
     	if (sadj != 0.0) seasonStr = "seasonal ${plus}${Math.round(sadj)}%, "
-    	seasonAdjust = Math.round((sadj / 100.0) * tpw)
+    	seasonAdjust = Math.round(((sadj / 100.0) * tpw)+0.5)
     }
  	if (isDebug) log.debug "moisture(${i}): diffHum: ${diffHum}, tpwAdjust: ${tpwAdjust} seasonAdjust: ${seasonAdjust}"
  	
@@ -1516,7 +1544,6 @@ def moisture(int i)
     }
     return [0, moistureSum]
 }  
-
 
 //get moisture SP
 int getDrySp(int i){
@@ -1892,7 +1919,14 @@ boolean isWeather(){
         if (isDebug) log.debug "humToday ${humToday}, avgHum ${avgHum}, humAdjust ${humAdjust}"
 
         //daily adjustment - average of heat and humidity factors
-        state.seasonAdj = ((heatAdjust + humAdjust) / 2) * 100.0        // Oops - this was backwards...want to increase if it's getting hotter in the next few days
+        //hotter over next 3 days, more water
+        //cooler over next 3 days, less water
+        //drier  over next 3 days, more water
+        //wetter over next 3 days, less water
+        //
+        //Note: these should never get to be very large, and work best if allowed to cumulate over time (watering amount will change marginally
+        //		as days get warmer/cooler and drier/wetter)
+        state.seasonAdj = ((heatAdjust + humAdjust) / 2) * 100.0        
         weatherString += "\n Adjusting ${Math.round(state.seasonAdj - 100)}% for today"
         
         // Apply seasonal adjustment on Monday each week or at install
