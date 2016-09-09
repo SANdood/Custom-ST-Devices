@@ -1545,6 +1545,7 @@ def moisture(int i)
     return [0, moistureSum]
 }  
 
+
 //get moisture SP
 int getDrySp(int i){
 
