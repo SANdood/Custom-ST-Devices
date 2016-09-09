@@ -850,7 +850,7 @@ def updated() {
 }
  
 def installSchedule(){
-	if (!state.seasonAdj) state.seasonAdj = 100
+	if (!state.seasonAdj) state.seasonAdj = 100.0
     if (!state.weekseonsAdj) state.weekseasonAdj = 0
     if (!state.daysAvailable) state.daysAvailable = 7	// just to be sure that it is initialized
     
@@ -898,7 +898,7 @@ def writeSettings(){
     if(!state.tpwMap) state.tpwMap = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
     if(!state.dpwMap) state.dpwMap = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
     if(state.setMoisture) state.setMoisture = null
-    if(!state.seasonAdj) state.seasonAdj = 0
+    if(!state.seasonAdj) state.seasonAdj = 0.0
     if(!state.weekseasonAdj) state.weekseasonAdj = 0    
     setSeason()	    
 }
@@ -980,7 +980,8 @@ boolean busy(){
     
     // Check that the controller isn't running some other schedule
     //def switchVal = switches.currentValue('switch')
-    if (switches.currentSwitch == 'off') {	// && !switchStat.contains('active') && !switchStat.contains('season') && !switchStat.contains('pause') && !switchStat.contains('moisture')) {
+    if ((switches.currentSwitch == 'off') && !switches.currentStatus.contains('pause')){	// && !switchStat.contains('active') && !switchStat.contains('sea !sson') && !switchStat.contains('pause') &&witchStat.contains('moisture')) {
+		log.debug "switches ${switches.currentSwitch}, status ${switches.currentStatus}"
     	return false				// nope - the controller isn't busy
     }    
 
@@ -991,14 +992,16 @@ boolean busy(){
        	return true
     }
     
-    // Don't need to do busyOff if not scheduled for today (but I don't think this will ever happen)
+    // Don't need to do busyOff if not scheduled for today (should be caught in preCheck, and thus never get here)
     log.debug "Another schedule is running, but ${app.label} is not scheduled for today anyway."
     return true
 }
 
 def busyOff(evt){
-	//unsubscribe(switches)    // do it now, in case someone hits the switch more than once
-    runIn(10, preCheck)   
+	//unsubscribe(switches)    
+	Random rand = new Random() 						// just in case there are multiple schedules waiting on the same controller
+	int randomSeconds = rand.nextInt(49) + 10
+    runIn(randomSeconds, preCheck)   
 }
 
 //run check every day
@@ -1010,20 +1013,20 @@ def preCheck(){
 		if (enableManual) subscribe(switches, 'switch.programOn', manualStart)
 		return
 	}
-	subscribe switches, 'switch.off', cycleOff
 	
 	if (!busy()) {
 		switches.programWait()
+		subscribe switches, 'switch.off', cycleOff
         note('active', "${app.label} starting pre-check", 'i')
         state.run = true		//set true before checking weather
 		runIn(30, checkRunMap)	//set checkRunMap before weather check, gives isWeather 30s to complete
 
        	if (isWeather()) {
        		state.run = false						// tell checkRunMap NOT to run
-       		log.debug "preCheck(): isWeather() -> state.run = false"
-            //cycleOff()
+       		//log.debug "preCheck(): isWeather() -> state.run = false"
+            unsubscribe(switches)
            	switches.programOff()
-           	//state.run = false            
+           	if (enableManual) subscribe(switches, 'switch.programOn', manualStart)
 		}
 	}
 }
@@ -1042,7 +1045,7 @@ def cycleOn(){
         }
 
         // master schedule complete (or null), check the control contact
-        if (!contact || contact.currentContact == 'closed') {
+        if ((contact == null) || contact.currentContact.contains('closed')) {
             // All clear, let's start running!
             subscribe switches, 'switch.off', cycleOff
             subscribe contact, 'contact.open', doorOpen
@@ -1059,6 +1062,7 @@ def cycleOn(){
             note('active', "${app.label} starting" + newString, 'd')
         }
         else {
+        	// log.debug "contact ${contact.currentContact}"
             // Ready to run, but the control contact is open, so we wait
             //subscribe switches, 'switch.off', cycleOff	// this is weird- does it allow someone to stop the schedule while in pause?
 			subscribe contact, 'contact.closed', doorClosed
@@ -1077,10 +1081,11 @@ def cycleOff(evt){
     unsubscribe(switches)
     switches.programOff()
     
+    unschedule(cycleOn)
+    
     if (enableManual) subscribe(switches, 'switch.programOn', manualStart)
     // if the control contact is closed, we are done...else we're waiting for it to close
-    // if (state.run == true && (contact == null || !contact.currentValue('contact').contains('open'))){   
-    if (state.run && !contact || contact.currentContact == 'open') {
+    if (state.run && (!contact || contact.currentContact.contains('closed'))) {
     	state.finishTime = new Date()
     	String finishTime = state.finishTime.format('h:mm a', location.timeZone)
     	note('finished', "${app.label} finished watering at ${finishTime}", 'i')
@@ -1140,6 +1145,8 @@ def checkRunMap(){
             if (enableManual) subscribe(switches, 'switch.programOn', manualStart)
             note('skipping', "${app.label} - No watering today", 'd')
         }	
+    } else {
+    	log.debug "checkRunMap(): state.run = false"  	// isWeather cancelled us out before we got started
     }
 }
 
@@ -1159,7 +1166,7 @@ def cycleLoop(int i)
     def pumpMap = ""
     def runNowMap = ""
 
-    String soilString = ""
+    String soilString = ''
     int totalCycles = 0
     int totalTime = 0
 
@@ -1209,10 +1216,12 @@ def cycleLoop(int i)
 
                 	rtime = calcRunTime(tpw, dpw)                
                 	//daily weather adjust if no sensor
-                	if(isSeason && (settings."sensor${zone}" == null || !learn)) 
+                	if(isSeason && (settings."sensor${zone}" == null || !learn)) {
+                		if (state.seasonAdj == 0) state.seasonAdj = 100.0
                 		rtime = Math.round(((rtime / cyc) * (state.seasonAdj.toFloat() / 100.0))+0.5)
-                	else 
-                		rtime = Math.round((rtime / cyc) + 0.5)                
+                	} else {
+                		rtime = Math.round((rtime / cyc) + 0.5)	// let moisture handle the seasonAdjust for learn zones.    
+                	}
 					totalCycles += cyc
 					totalTime += (rtime * cyc)
                 	runNowMap += "${settings."name${zone}"}: ${cyc} x ${rtime} min\n"
@@ -1308,12 +1317,10 @@ int initDPW(int zone){
 	
 	//int zone = i.toInteger()
 	int tpw = getTPW(zone)		// was getTPW -does not update times in scheduler without initTPW
-
 	int dpw = 0
+	
 	if(tpw > 0) {
-
         float perDay = 20.0
-
         if(settings."perDay${zone}") perDay = settings."perDay${zone}".toFloat()
         
     	dpw = Math.round(tpw.toFloat() / perDay)
@@ -1323,27 +1330,19 @@ int initDPW(int zone){
 			if((tpw.toFloat() / perDay) < 3.0) dpw = 2 else dpw = 4
 		int daycheck
 		if (state.daysAvailable) daycheck = state.daysAvailable else daycheck = daysAvailable()
-
-
-
     	if(daycheck < dpw) dpw = daycheck
-
     }
-
 	state.dpwMap[zone-1] = dpw
     return dpw
 }
 
 // Get current days per week value, calls init if not defined
 int getDPW(int zone) {
-
 	if (state.dpwMap) return state.dpwMap[zone-1] else return initDPW(zone)
-
 }
 
 //Initialize Time per Week
 int initTPW(int zone) {   
-
     //log.trace "initTPW(${zone})"
     if (!state.tpwMap) state.tpwMap = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
     
@@ -1357,29 +1356,24 @@ int initTPW(int zone) {
     float seasonAdjust = 100.0
     if (state.weekseasonAdj && isSeason && (settings."plant${zone}" != 'New Plants')) seasonAdjust = state.weekseasonAdj    
 	
-    //int zone = i.toInteger()
 	int tpw = 0
-	
 	// Use learned, previous tpw if it is available
 	if ( settings."sensor${zone}" ) {
-		seasonAdjust = 100.0 			// no seasonAdjust if this zone uses a sensor
+		seasonAdjust = 100.0 			// no weekly seasonAdjust if this zone uses a sensor
 		if(state.tpwMap && learn) tpw = state.tpwMap[zone-1]
 	}
 	
 	// set user-specified minimum time with seasonal adjust
 	int minWeek = 0
-
 	if (settings."minWeek${zone}") minWeek = settings."minWeek${zone}".toInteger()
     if (minWeek != 0) {
     	tpw = Math.round(minWeek * (seasonAdjust / 100.0))
     } 
-
     else if (!tpw || (tpw == 0)) { // use calculated tpw
     	tpw = Math.round((plant(zone) * nozzle(zone) * (gainAdjust / 100.0) * (seasonAdjust / 100.0)))
     }
 
 	state.tpwMap[zone-1] = tpw
-    // log.debug "initTPW(${zone}) tpw: ${tpw}"
     return tpw
 }
 
@@ -1394,14 +1388,13 @@ int calcRunTime(int tpw, int dpw)
 {           
     int duration = 0
     if ((tpw > 0) && (dpw > 0)) duration = Math.round(tpw.toFloat() / dpw.toFloat())
-
     return duration
 }
 
 // Check the moisture level of a zone returning dry (1) or wet (0) and adjust tpw if overly dry/wet
 def moisture(int i)
 {
-	boolean isDebug = false
+	boolean isDebug = true
 	if (isDebug) log.debug "moisture(${i})"
 	// No Sensor on this zone or manual start skips moisture checking altogether
 	if (settings."sensor${i}" == null || i == 0) {     
@@ -1460,13 +1453,22 @@ def moisture(int i)
     	if (tpwAdjust < (tpwFloat * adjFactor)) tpwAdjust = Math.round((tpwFloat * adjFactor) - 0.5)	// limit slow decay to 12.5% of tpw per day
 		if (tpwAdjust > (-1 * minimum)) tpwAdjust = -1 * minimum // but we need to move at least 1 minute per cycle per day to actually increase the watering time
     }
-    if (isDebug) log.debug "moisture(${i}): diffHum: ${diffHum}, tpwAdjust: ${tpwAdjust}"
     
-    String moistureSum = ''
- 
-    int newTPW = Math.round(tpw + tpwAdjust)
-    if (tpwAdjust > 0) {							// needs more water
-
+    int seasonAdjust = 0
+    String seasonStr = ''
+    String plus = ''
+    if (isSeason && (state.seasonAdj != 100.0) && (state.seasonAdj != 0)) {
+    	float sadj = state.seasonAdj - 100.0
+    	if (sadj > 0.0) plus = '+'
+    	if (sadj != 0.0) seasonStr = "seasonal ${plus}${Math.round(sadj)}%, "
+    	seasonAdjust = Math.round((sadj / 100.0) * tpw)
+    }
+ 	if (isDebug) log.debug "moisture(${i}): diffHum: ${diffHum}, tpwAdjust: ${tpwAdjust} seasonAdjust: ${seasonAdjust}"
+ 	
+ 	// Now, adjust the tpw. With seasonal adjustments enabled, tpw can go up or down independent of the difference in the sensor vs SP
+    int newTPW = Math.round(tpw + tpwAdjust + seasonAdjust) 
+	int adjusted = 0
+    if ((tpwAdjust + seasonAdjust) > 0) {							// needs more water
 		int perDay = 20
         if (settings."perDay${i}") perDay = settings."perDay${i}".toInteger()
         if (perDay < 8) perDay = 8
@@ -1476,15 +1478,12 @@ def moisture(int i)
     		int maxTPW = state.daysAvailable * 120	// arbitrary maximum of 2 hours per available watering day per week
     		if (newTPW > maxTPW) newTPW = maxTPW	// initDPW() below may spread this across more days		
     		if (newTPW >= (maxTPW*0.6667)) note('warning', "Please check ${settings["sensor${i}"]}, Zone ${i} time per week seems high: ${newTPW} mins/week",'w')
-
   		}
     	state.tpwMap[i-1] = newTPW
-        state.dpwMap[i-1] = initDPW(i)				// call initDPW not getDPW because it may need to recalculate days per week
-    	moistureSum = "${settings."name${i}"}, Watering: ${settings."sensor${i}"} reads ${latestHum}%, SP is ${spHum}%, time adjusted by ${tpwAdjust} mins to ${newTPW} mins/week\n"
-    	return [1, moistureSum]
+    	dpw = initDPW(i)							// need to recalculate days per week since tpw changed - initDPW() stores the value into dpwMap
+		adjusted = newTPW - tpw 	// so that the adjustment note is accurate
     }
-    // else, if we are currently above the humidity SP
-    else if (tpwAdjust < 0) { 						// New: No longer water if sensor humidity is above SP
+    else if ((tpwAdjust + seasonAdjust) < 0) { 						// Needs less water
     	// Find the minimum tpw
 		int minLimit = 0
 		if (settings."minWeek${i}" != null) {		// if minWeek != 0, then use that as the minimum limiter
@@ -1498,18 +1497,21 @@ def moisture(int i)
 		}
         if (state.tpwMap[i-1] != newTPW) {	// are we changing the tpw?
         	state.tpwMap[i-1] = newTPW		// store the new tpw
-        	state.dpwMap[i-1] = initDPW(i)	// may need to recalculate days per week
-        	int adjusted = newTPW - tpw 	// so that the next note is accurate
-    		moistureSum = "${settings."name${i}"}, Skipping: ${settings."sensor${i}"} reads ${latestHum}% SP is ${spHum}%, adjusted by ${adjusted} mins to ${newTPW} mins/week\n"
-        } else {							// not changing tpw
-        	moistureSum = "${settings."name${i}"}, Skipping: ${settings."sensor${i}"} reads ${latestHum}%, SP is ${spHum}% (${tpw} mins/week)\n"
-    	}
-    	return [0, moistureSum]
-    } else if (diffHum >= 0.0) {			// assert tpwAdjust == 0 
-        moistureSum = "${settings."name${i}"}, Watering: ${settings."sensor${i}"} reads ${latestHum}%, SP is ${spHum}% (${tpw} mins/week)\n"
+        	dpw = initDPW(i)				// may need to reclac days per week - initDPW() now stores the value into state.dpwMap - avoid doing that twice
+        	adjusted = newTPW - tpw 	// so that the adjustment note is accurate
+        }
+    }
+    
+    String moistureSum = ''
+    String adjStr = ''
+    plus = ''
+    if (adjust > 0) plus = '+'
+    if (adjusted != 0) adjStr = ", ${seasonStr}adjusted ${plus}${adjusted} mins"
+    if (diffHum >= 0.0) { 				// water only if ground is drier than SP
+    	moistureSum = "${settings."name${i}"}, Water: ${settings."sensor${i}"} @ ${latestHum}% (${spHum}%)${adjStr} (${newTPW} min/wk)\n"
         return [1, moistureSum]
-    } else { 								// assert diffUm < 0.0 - never water if current sensor > SP
-    	moistureSum = "${settings."name${i}"}, Skipping: ${settings."sensor${i}"} reads ${latestHum}%, SP is ${spHum}% (${tpw} mins/week)\n"
+    } else { 							// not watering
+        moistureSum = "${settings."name${i}"}, Skip: ${settings."sensor${i}"} @ ${latestHum}% (${spHum}%)${adjStr} (${tpw} min/wk)\n"
     	return [0, moistureSum]
     }
     return [0, moistureSum]
@@ -1748,12 +1750,14 @@ boolean isWeather(){
    	if (isDebug) log.debug "isWeather(): ${wzipcode}"   
 
 	// get only the data we need
-
-	def featureString = 'forecast/conditions/geolookup'
+	String featureString = 'forecast/conditions/geolookup'
 	if (isSeason) featureString += '/astronomy'
+	def startTime = new Date()
     Map wdata = getWeatherFeature(featureString, wzipcode)
+    def endTime = new Date()
+    log.debug "getWeatherFeature elapsed time: ${endTime - startTime}ms"
     if (wdata != null) {
-    	log.debug wdata.response
+    	if (isDebug) log.debug wdata.response
 		if (wdata.response.containsKey('error')) {
         	if (wdata.response.error.type != 'invalidfeature') {
     			note('warning', "Check Zipcode setting, error:\n${wdata.response.error.type}: ${wdata.response.error.description}" , 'w')
@@ -1778,35 +1782,26 @@ boolean isWeather(){
     float YRain = 0.0
     float weeklyRain = 0.0
     
-
     if (isRain) {
     	if (isDebug) log.debug 'isWeather(): isRain'
     	
     	// Get forecasted rain for today and tomorrow
-
 		if (!wdata.response.features.containsKey('forecast') || (wdata.response.features.forecast.toInteger() != 1) || (wdata.forecast == null)) {
     		log.debug 'isWeather(): Unable to get weather forecast.'
-
     		return false
     	}
-
     	if (wdata.forecast.simpleforecast.forecastday[0].qpf_allday.in.isNumber()) qpfTodayIn = wdata.forecast.simpleforecast.forecastday[0].qpf_allday.in.toFloat()
 		if (wdata.forecast.simpleforecast.forecastday[0].pop.isNumber()) popToday = wdata.forecast.simpleforecast.forecastday[0].pop.toFloat()
     	if (wdata.forecast.simpleforecast.forecastday[1].qpf_allday.in.isNumber()) qpfTomIn = wdata.forecast.simpleforecast.forecastday[1].qpf_allday.in.toFloat()
-
 		if (wdata.forecast.simpleforecast.forecastday[1].pop.isNumber()) popTom = wdata.forecast.simpleforecast.forecastday[1].pop.toFloat()
 		
     	// Get rainfall so far today
-
 		if (!wdata.response.features.containsKey('conditions') || (wdata.response.features.conditions.toInteger() != 1) || (wdata.current_observation == null)) {
     		log.debug 'isWeather(): Unable to get current weather conditions.'
-
     		return false
     	}
-
 		if (wdata.current_observation.precip_today_in.isNumber()) {
        		TRain = wdata.current_observation.precip_today_in.toFloat()
-
     	}
     	if (TRain > (qpfTodayIn * (popToday / 100.0))) {
     		qpfTodayIn = TRain	// already have more rain than forecast for today
@@ -1814,26 +1809,21 @@ boolean isWeather(){
     	}
 
     	// Get yesterday's rainfall
-
     	int day = getWeekDay()
     	YRain = state.Rain[day - 1]
-    
 
     	if (isDebug) log.debug "TRain ${TRain} qpfTodayIn ${qpfTodayIn} @ ${popToday}%, YRain ${YRain}"
-
 
     	int i = 0
 		while (i <= 6){
     		int factor = 0
         	if ((day - i) > 0) factor = day - i else factor =  day + 7 - i
-
         	float getrain = state.Rain[i]
     		if (factor != 0) weeklyRain += (getrain / factor)
     		i++
     	}
 
     	if (isDebug) log.debug "isWeather(): weeklyRain ${weeklyRain}"
-
     }
      
     if (isDebug) log.debug 'isWeather(): build report'      
@@ -1844,14 +1834,11 @@ boolean isWeather(){
     }
 
     if (isDebug) log.debug 'isWeather(): get highs'
-    
 
     //get highs
-
    	int highToday = 0
    	int highTom = 0
    	if (wdata.forecast.simpleforecast.forecastday[0].high.fahrenheit.isNumber()) highToday = wdata.forecast.simpleforecast.forecastday[0].high.fahrenheit.toInteger()
-
    	if (wdata.forecast.simpleforecast.forecastday[1].high.fahrenheit.isNumber()) highTom = wdata.forecast.simpleforecast.forecastday[1].high.fahrenheit.toInteger()
    	
     String weatherString = "${city} weather\n TDA: ${highToday}F"
@@ -1861,9 +1848,6 @@ boolean isWeather(){
     
     if (isSeason)
     {   
-    	//seasonal q factor
-    	float qFact = 0.7
-    	
 		if (!isRain) { // we need to verify we have good data first if we didn't do it above
 			if (!wdata.response.features.containsKey('forecast') || (wdata.response.features.forecast.toInteger() != 1) || (wdata.forecast == null)) {
     			log.debug 'Unable to get weather forecast.'
@@ -1872,31 +1856,47 @@ boolean isWeather(){
 		}
 		
 		// is the temp going up or down for the next few days?
-    	float totalHigh = 0.0
-    	int j = 0
-    	int highs = 0
-    	while (j < 4) {	// get forecasted high for today and next 3 days
-
+    	int totalHigh = highToday
+    	int j = 1
+    	int highs = 1
+    	while (j < 4) {	// get forecasted high for next 3 days
     		if (wdata.forecast.simpleforecast.forecastday[j].high.fahrenheit.isNumber()) {
-    			totalHigh += wdata.forecast.simpleforecast.forecastday[j].high.fahrenheit.toFloat()
+    			totalHigh += wdata.forecast.simpleforecast.forecastday[j].high.fahrenheit.toInteger()
     			highs++
     		}
     		j++
     	}
-    	float avgHigh = highToday
-    	if ( highs > 0 ) avgHigh = totalHigh / highs
+    	float avgHigh = highToday.toFloat()
+    	if ( highs > 0 ) avgHigh = (totalHigh / highs)
+    	float heatAdjust = avgHigh / highToday
+    	if (isDebug) log.debug "highToday ${highToday}, avgHigh ${avgHigh}, heatAdjust ${heatAdjust}"
     	
-        //daily adjust
-        state.seasonAdj = Math.round((highToday / avgHigh) * 100.0)        
-        weatherString += "\n Adjusted ${state.seasonAdj - 100}% for today"
+		//get humidity
+        int humToday = 0
+        if (wdata.forecast.simpleforecast.forecastday[0].avehumidity.isNumber()) 
+        	humToday = wdata.forecast.simpleforecast.forecastday[0].avehumidity.toInteger()
+        
+        j = 1
+        highs = 1
+        int totalHum = humToday
+        while (j < 4) { // get forcasted humitidty for today and the next 3 days
+        	if (wdata.forecast.simpleforecast.forecastday[j].avehumidity.isNumber()) {
+        		totalHum += wdata.forecast.simpleforecast.forecastday[j].avehumidity.toInteger()
+        		highs++
+        	}
+        	j++
+        }
+        float avgHum = humToday.toFloat()
+        if (highs > 1) avgHum = totalHum / highs
+        float humAdjust = 1.5-((0.5*avgHum)/humToday)	// basically, half of the delta % between today and today+3 days
+        if (isDebug) log.debug "humToday ${humToday}, avgHum ${avgHum}, humAdjust ${humAdjust}"
+
+        //daily adjustment - average of heat and humidity factors
+        state.seasonAdj = ((heatAdjust + humAdjust) / 2) * 100.0        // Oops - this was backwards...want to increase if it's getting hotter in the next few days
+        weatherString += "\n Adjusting ${Math.round(state.seasonAdj - 100)}% for today"
         
         // Apply seasonal adjustment on Monday each week or at install
         if ((getWeekDay() == 1) || (state.weekseasonAdj == 0)) {
-            
-            //get humidity
-            //def gethum = sdata.forecast.simpleforecast.forecastday.avehumidity
-            //def humWeek = Math.round((gethum.get(0).toInteger() + gethum.get(1).toInteger() + gethum.get(2).toInteger() + gethum.get(3).toInteger() + gethum.get(4).toInteger())/5)    
-
             //get daylight
  			if (wdata.response.features.containsKey('astronomy') && (wdata.response.features.astronomy.toInteger() == 1) && (wdata.moon_phase != null)) {
             	int getsunRH = 0
@@ -1905,11 +1905,8 @@ boolean isWeather(){
             	int getsunSM = 0
             	
             	if (wdata.moon_phase.sunrise.hour.isNumber()) 	getsunRH = wdata.moon_phase.sunrise.hour.toInteger()
-
         		if (wdata.moon_phase.sunrise.minute.isNumber()) getsunRM = wdata.moon_phase.sunrise.minute.toInteger()
-
             	if (wdata.moon_phase.sunset.hour.isNumber()) 	getsunSH = wdata.moon_phase.sunset.hour.toInteger()
-
             	if (wdata.moon_phase.sunset.minute.isNumber()) 	getsunSM = wdata.moon_phase.sunset.minute.toInteger()
 
             	int daylight = ((getsunSH * 60) + getsunSM)-((getsunRH * 60) + getsunRM)
@@ -1917,13 +1914,24 @@ boolean isWeather(){
             
             	//set seasonal adjustment
             	//state.weekseasonAdj = Math.round((daylight/700 * avgHigh/75) * ((1-(humWeek/100)) * avgHigh/75)*100)
-            	state.weekseasonAdj = Math.round((daylight/700.0) * (avgHigh/70.0) * (qFact * 100.0))
+            	//seasonal q factor
+    			float qFact = 0.75
+            	//state.weekseasonAdj = Math.round((daylight/700.0) * (avgHigh/70.0) * (qFact * 100.0))
+            	
+            	// (Daylight / 11.66 hours) * ( Average of ((Avg Temp / 70F) + ((1/2 of Average Humidity) / 65.46))) * calibration quotient
+            	// Longer days = more water		(day length constant = approx USA day length at fall equinox)
+            	// Higher temps = more water
+            	// Lower humidity = more water	(humidity constant = USA National Average humidity in July)
+            	state.weekseasonAdj = Math.round((daylight / 700.0) * (((avgHigh / 70.0) + (1.5-((avgHum * 0.5) / 65.46))) / 2.0) * (qFact * 100.0))
 
             	//apply seasonal time adjustment
-            	weatherString += "\n Applying seasonal adjustment of ${state.weekseasonAdj-100}% this week"            
+            	String plus = ''
+            	if (state.weekseasonAdj != 0) {
+            		if (state.weekseasonAdj > 0) plus = '+'
+            		weatherString += "\n Adjusting ${state.weekseasonAdj-100}% for the week"
+            	}
             	setSeason()
             } else {
-
             	log.debug 'isWeather(): Unable to get sunrise/set info for today.'
             }
         }
@@ -1931,7 +1939,6 @@ boolean isWeather(){
     note('season', weatherString , 'f')
 
 	// if only doing seasonal adjustments, we are done
-
     if (!isRain) return false	
     
     float setrainDelay = 0.2
@@ -1968,7 +1975,6 @@ boolean isWeather(){
         	note('rainy', "${app.label} is skipping, at least ${rainStr}in of rain is probable later today.", 'd')        
         	return true
     	}
-
     	popRain += qpfTomIn * (popTom / 100.0)
     	if (popRain > setrainDelay){
     		String rainStr = String.format('%.2f', popRain)
