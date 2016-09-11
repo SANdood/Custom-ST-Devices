@@ -114,9 +114,9 @@ def startPage(){
         }
              
         section(''){            
-            href(name: 'delayPage', title: 'Valve and Contact delays', required: false, page: 'delayPage',
+            href(name: 'delayPage', title: 'Valve delays & Pause controls', required: false, page: 'delayPage',
                 image: 'http://www.plaidsystems.com/smartthings/st_timer.png',
-                description: "Valve Delay: ${pumpDelayString()} s\n${contactSensorString()}\nSchedule Sync: ${syncString()}")
+                description: "Valve Delay: ${pumpDelayString()} s\n${waterStoppersString()}\nSchedule Sync: ${syncString()}")
             }
             
         section(''){
@@ -193,22 +193,37 @@ private String enableString(){
     else if (enable) return 'On' else return 'Off'
 }
 
-private String contactSensorString(){
-	String contactString = 'Contact Sensor'
+private String waterStoppersString(){
+	String stoppers = '\nContact Sensor'
 	if (contacts) {
-		if (contacts.size() > 1) contactString += 's'
-		contactString += ': '
+		if (contacts.size() > 1) stoppers += 's'
+		stoppers += ': '
 		int i = 1
 		contacts.each {
-			if ( i > 1) contactString += ', '
-			contactString += it.displayName
+			if ( i > 1) stoppers += ', '
+			stoppers += it.displayName
 			i++
 		}
-		contactString += "\nContact Delay: ${contactDelay} mins"
+		stoppers += "\nPause: when ${contactStop}"
 	} else {
-		contactString += ': None'
+		stoppers += ': None'
 	}
-	return contactString
+	stoppers += "\n\nSwitch"
+	if (toggles) {
+		if (toggles.size() > 1) stoppers += 'es'
+		stoppers += ': '
+		int i = 1
+		toggles.each {
+			if ( i > 1) stoppers += ', '
+			stoppers += it.displayName
+			i++
+		}
+		stoppers += "\nPause: when ${toggleStop}"
+	} else {
+		stoppers += ': None'
+	}
+	stoppers += "\n\nRestart Delay: ${contactDelay} mins"
+	return stoppers
 }
 
 String isRainString(){
@@ -282,21 +297,23 @@ def delayPage() {
                       title: 'Pump and Master valve delay',
                       required: false,
                       'Setting a delay is optional, default is 0.  If you have a pump that feeds water directly into your valves, set this to 0. To fill a tank or build pressure, you may increase the delay.\nStart->Pump On->delay->Valve On->Valve Off->delay'
-        }
-        section('') {
+//        }
+//        section('') {
                 input 'pumpDelay', 'number', title: 'Set a delay in seconds?', defaultValue: '0', required: false
         }
         section(''){
             paragraph image: 'http://www.plaidsystems.com/smartthings/st_pause.png',
-                      title: 'Contact & Switch delays',
+                      title: 'Pause Control Contacts & Switches',
                       required: false,
                       'Selecting contacts or control switches is optional. When a selected contact sensor is opened or switch is toggled, water immediately stops and will not resume until all of the contact sensors or closed and the switches are reset.  Caution: if a contact is set and left open, or a switch is left toggled, the watering program will never run.'
-        }
-        section('') {
-            input name: 'contacts', title: 'Select water delay contacts', type: 'capability.contactSensor', multiple: true, required: false            
+//        }
+//        section('') {
+            input name: 'contacts', title: 'Select water delay contacts', type: 'capability.contactSensor', multiple: true, required: false, submitOnChange: true            
+			if (contacts)
+				input name: 'contactStop', title: 'Stop watering when contacts are...', type: 'enum', required: (settings.contacts != []), metadata: [values: ['open', 'closed']], defaultValue: 'open'
 			input name: 'toggles', title: 'Select water delay switches', type: 'capability.switch', multiple: true, required: false, submitOnChange: true
 			if (toggles) 
-				input name: 'toggleStop', title: 'Stop watering when switch is on or off?', type: 'enum', required: (settings.toggles != null), metadata: [values: ['on', 'off']]
+				input name: 'toggleStop', title: 'Stop watering when switches are...', type: 'enum', required: (settings.toggles != null), metadata: [values: ['on', 'off']], defaultValue: 'on'
 			input 'contactDelay', 'number', title: 'Restart watering how many minutes after the last contact is closed and the last switch is toggled?', defaultValue: '1', required: false
         }
         section(''){
@@ -799,7 +816,11 @@ def installed() {
     state.dpwMap = 		[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
     state.tpwMap = 		[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
     state.Rain = 		[0,0,0,0,0,0,0]    
-    state.daycount = 	[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]    
+    state.daycount = 	[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+	atomicState.run = false				// must be atomic - used to recover from crashes
+	state.pauseTime = null
+	state.startTime = null
+	atomicState.finishTime = null		// must be atomic - used to recover from crashes
     
     log.debug "Installed with settings: ${settings}"
     installSchedule()
@@ -807,76 +828,29 @@ def installed() {
  
 def updated() {    
     log.debug "Updated with settings: ${settings}"
-    log.debug "toggleStop: ${toggleStop}"
     installSchedule()    
 }
  
 def installSchedule(){
 	if (!state.seasonAdj) 		state.seasonAdj = 100.0
     if (!state.weekseasonAdj) 	state.weekseasonAdj = 0
-    if (!state.daysAvailable) 	state.daysAvailable = 7	// just to be sure that it is initialized
+    if (!state.daysAvailable) 	state.daysAvailable = 7		// just to be sure that it is initialized
     
-    if (state.run) {									// Hmmm...seems we were running before...
-    	switch (switches.currentSwitch) {
-    		case 'on':									// looks like I'm running the controller at the moment
-    			log.debug "${app.label} updated while running, no action taken"
-    			// can we assume all our subscriptions are valid?
-    			break
-    		case 'off': 
-    			if (!switches.currentStatus == 'pause') { // ...but not any longer
-    				state.run = false
-	    			unsubscribe()							// release switches, contacts
-	    			unschedule()
-	    			// switches.programOff
-	    			if (enableManual) subscribe(switches, 'switch.programOn', manualStart)
-    			} else { 									// we are currently running, make sure the right subscriptions are in place
-    				if (!contacts || !contacts.currentContact.contains('open')) {
-            			subscribe switches, 'switch.off', cycleOff
-            			if (contacts) subscribe contacts, 'contact.open', doorOpen
-            			resume()
-            		
-            			// send the notification AFTER we start the controller (in case we run over our execution time limit)
-            			String newString = ''
-            			state.startTime = new Date()
-            			if (state.pauseTime) state.pauseTime = null
-            			if (state.totalTime) {
-                			String finishTime = new Date(now() + (60000 * state.totalTime).toLong()).format('EEEE @ h:mm a', location.timeZone)
-                			newString = ' - ETC: ' + finishTime
-            			}
-            			note('active', "${app.label} starting" + newString, 'd')
-    				} else { 								// at lkeast one contact is open, remain paused
-    					subscribe contacts, 'contact.closed', doorClosed
-    					subscribe switches, 'switch.off', cycleOff
-    					// don't need to reset the pause timer
-    					// send a note?
-    				}
-    			}
-    			break
-    		case 'programWait':					// looks like I died previously, let's try to clean things up
-    		case 'programOn':
-				log.debug "${app.label} updated, looks like it died recently...cleaning up"
-				unsubscribe()
-				switches.programOff()
-				unschedule()
-				state.run = false
-				if (enableManual) subscribe(switches, 'switch.programOn', manualStart)
-				break
-			default:
-				log.debug "${app.label} updated, state.run == true, and I honestly don't know what I'm supposed to do"
-    	}
-    } else {											// nope, we aren't already running (but someone else could be)
-    	unsubscribe()									// reset the baseline subscriptions
-    	unschedule()									// unschedule everything (just in case we left a runIn() hanging
-    	if ((switches.currentSwitch == 'Off') && (switches.currentStatus == 'active')) switches.programOff()
-    	if (enableManual) subscribe(switches, 'switch.programOn', manualStart)
+    subscribe(app, appTouch)								// enable the "play" button for this schedule
+    
+    if (atomicState.run) {
+    	if (!attemptRecovery()) {							// looks like we're note actually running
+			// this is a risky move, but it's not a valid state, so let's clean it up
+			// if ((switches.currentSwitch == 'programWait') && (switches.currentStatus == 'active')) {
+			// switches.programOff()
+		}
     }
-    // unschedule()
-    //  state.run = false
-    
+    else {
+    	resetEverything()
+    }
+
     Random rand = new Random()
     long randomOffset = 0
-    
-    // if (enableManual) subscribe(switches, 'switch.programOn', manualStart)
     
     // always collect rainfall
     int randomSeconds = rand.nextInt(59)
@@ -891,10 +865,86 @@ def installSchedule(){
     }
     else note('disable', 'Automatic watering turned off or incomplete setup.', 'w')
 }
- 
-boolean isPaused() {
+
+// Called to find and repair after crashes - called by installSchedule() and busy()
+boolean attemptRecovery() {
+	if (atomicState.run == true) {							// Hmmm...seems we were running before...
+    	switch (switches.currentSwitch) {
+    		case 'on':										// looks like this schedule is running the controller at the moment
+    			if (!atomicState.finishTime) {				// and we don't think we're done yet
+    				log.debug "${app.label} updated while running, no action taken"
+    				//log.debug "subscriptions: ${app.subscriptions}"
+    				runIn(15, cycleOn)
+    				return true
+    			}
+    			else {										// hmmm...switch is on and we think we're finished
+    				resetEverything()
+					return false
+    			} 
+    			break
+    			
+    		case 'off': 									// switch is off - did we finish?
+    			if (atomicState.finishTime)	{				// off and finished, let's just reset things
+    				resetEverything()
+    				return false
+    			}
+    			else if (switches.currentStatus != 'pause') { 	// off and not paused - probably another schedule, let's clean up
+					resetEverything()
+					return false
+    			} else { 									// off and not finished, and paused, we apparently crashed while paused
+    				runIn(15, cycleOn)
+					return true
+    			}
+    			break
+
+    		case 'programOn':					// died while manual program running?    			
+    		case 'programWait':					// looks like died previously before we got started, let's try to clean things up
+				log.debug "Looks like ${app.label} crashed recently...cleaning up"
+				switches.programOff()
+				resetEverything()
+				if (atomicState.finishTime) atomicState.finishTime = ""
+				return false
+				break
+
+			default:
+				log.debug "attemptRecovery(): atomicState.run == true, and I honestly don't know what I'm supposed to do"
+				return true
+    	}
+    } 
+}
+
+def resetEverything() {
+	if (atomicState.run) atomicState.run = false    	// we're not running the controller any more
+	unsubAllBut()										// release manual, switches, contacts & toggles 
+	// take care not to unschedule preCheck() or getRainToday()
+	unschedule(cycleOn)
+	unschedule(checkRunMap)
+	unschedule(writeCycles)
+	unschedule(subOff)
+	if (enableManual) subscribe(switches, 'switch.programOn', manualStart)
+}
+
+// unsubscribe from ALL events EXCEPT app.touch
+def unsubAllBut() {
+	unsubscribe(switches)
+	unsubWaterStoppers()
+	if (sync) unsubscribe(sync)
+	subscribe(app, appTouch) 	// subscribe again, just in case
+}
+
+def appTouch(evt) {
+	def running = atomicState.run
+	log.debug "appTouch(): atomicState.run = ${running}"
+	if (running) {
+		running = attemptRecovery()			// if we crashed, clean up before we start preCheck again
+	}
+	// if running still == true, we probably should skip the preCheck(), but let busy() handle that for now...
+	runIn( 2, preCheck())					// run it off a schedule, so we can see how long it takes in the app.state
+}
+
+boolean isWaterStopped() {
 	if (contacts) {
-		if (contacts.currentContact.contains('open')) return true
+		if (contacts.currentContact.contains(contactStop)) return true
 	}
 	if (toggles) {
 		if (toggles.currentSwitch.contains(toggleStop)) return true
@@ -902,27 +952,57 @@ boolean isPaused() {
 	return false
 }
 
-def subPauseOn() {
+def subWaterStop() {
 	if (contacts) {
 		unsubscribe(contacts)
-		subscribe(contacts, 'contact.open', doorOpen)
+		subscribe(contacts, "contact.${contactStop}", waterStop)
 	}
 	if (toggles) {
 		unsubscribe(toggles)
-		subscribe(toggles, "switch.${toggleStop}", toggleStop)
+		subscribe(toggles, "switch.${toggleStop}", waterStop)
 	}
 }
 
-def subPauseOff() {
+def subWaterStart() {
 	if (contacts) {
 		unsubscribe(contacts)
-		subscribe(contacts, 'contact.closed', doorClosed)
+		def cond = (settings.contactStop == 'open') ? 'closed' : 'open'
+		subscribe(contacts, "contact.${cond}", waterStart)
 	}
 	if (toggles) {
 		unsubscribe(toggles)
 		def cond = (settings.toggleStop == 'on') ? 'off' : 'on'
-		subscribe(toggles, "switch.${cond}", toggleStart)
+		subscribe(toggles, "switch.${cond}", waterStart)
 	}
+}
+
+def unsubWaterStoppers() {
+	if (contacts) 	unsubscribe(contacts)
+	if (toggles) 	unsubscribe(toggles)
+}
+
+String getWaterStopList() {
+	String deviceList = ''
+	int i = 1
+	if (contacts) {
+		contacts.each {
+			if (it.currentContact == contactStop) {
+				if (i > 1) deviceList += ', '
+				deviceList += it.displayName + ' is ' + contactStop
+				i++
+			}
+		}
+	}
+	if (toggles) {
+		toggles.each {
+			if (it.currentSwitch == toggleStop) {
+				if (i > 1) deviceList += ', '
+				deviceList += it.displayName + ' is ' + toggleStop
+				i++
+			}
+		}
+	}
+	return deviceList
 }
 
 //write initial zone settings to device at install/update
@@ -973,23 +1053,32 @@ String getRunDays(day1,day2,day3,day4,day5,day6,day7)
 
 //start manual schedule
 def manualStart(evt){
-	if (enableManual && (state.run == false)){
+	if (enableManual && (atomicState.run == false)){
         def runNowMap = []
         runNowMap = cycleLoop(0)    
         if (runNowMap)
         { 
-			subscribe switches, 'switch.off', cycleOff
-			switches.programWait()
-            state.run = true
+        	switches.programWait()
+            atomicState.run = true
+			subscribe(switches, 'switch.off', cycleOff)
+
             runIn(60, cycleOn)   //start water program
             
-            runNowMap = "${app.label} manually started, watering in 1 minute:\n" + runNowMap
+            String newString = ''
+            if (state.totalTime) {
+                int hours = state.totalTime / 60			// DON'T Math.round this one
+                int mins = state.totalTime - (hours * 60)
+                String hourString = ''
+                if (hours > 0) hourString = "${hours} hours &"
+                newString = "Run time: ${hourString} ${mins} minutes:\n"
+            }
+            runNowMap = "${app.label} manual start, watering in 1 minute:\n" + newString + runNowMap
             note('active', runNowMap, 'd')                      
         }
         else {
             //switches.programOff()
             note('skipping', 'Check ${app.label} setup', 'a')
-            state.run = false
+            atomicState.run = false
         }
     }
 }
@@ -997,20 +1086,26 @@ def manualStart(evt){
 //true if another schedule is running
 boolean busy(){
 	// Check if we are already running (somebody changed the schedule time while this schedule is running)
-    if (state.run == true){
-    	note('active', "${app.label} already running, skipping additional start", 'd')
-    	return true
+    if (atomicState.run == true){
+    	if (!attemptRecovery()) {		// recovery will clean out any prior crashes
+    		return false		
+    	}
+    	else {
+    		note('active', "${app.label} already running, skipping additional start", 'd')
+    		return true
+    	}
     }
     
     // Check that the controller isn't running some other schedule
-    if ((switches.currentSwitch == 'off') && (!switches.currentStatus == 'pause')) {
-		log.debug "switches ${switches.currentSwitch}, status ${switches.currentStatus}"
+    if ((switches.currentSwitch == 'off') && (switches.currentStatus != 'pause')) {
+		//log.debug "switches ${switches.currentSwitch}, status ${switches.currentStatus}"
+		resetEverything()			// get back to the start state
     	return false				// nope - the controller isn't busy
     }    
 
-    // Something else is running, but are we even supposed to run today?
+    // Something else (not us) is running (or pause), but are we even supposed to run today?
     if (isDay()) {						
-    	subscribe switches, 'switch.off', busyOff      
+    	subscribe(switches, 'switch.off', busyOff)  
     	note('active', "Another schedule running, waiting to start ${app.label}", 'i')
        	return true
     }
@@ -1028,46 +1123,40 @@ def busyOff(evt){
 }
 
 //run check every day
-def preCheck(){
-	log.debug "preCheck(): starting"
+def preCheck() {
+	//log.debug "preCheck(): starting"
 	//unsubscribe(switches)		// don't do this here, in cae another instance of myself is running
 
     if (!isDay()) {
 		log.debug "preCheck() Skipping: ${app.label} is not scheduled for today."				// silent - no note
-		if (!state.run && enableManual) subscribe(switches, 'switch.programOn', manualStart)	// only if we aren't running already
+		if ((atomicState.run == false) && enableManual) subscribe(switches, 'switch.programOn', manualStart)	// only if we aren't running already
 		return
 	}
 	
 	if (!busy()) {
 		switches.programWait()						// take over the controller so other schedules don't mess with us
-		state.run = true							// set true before checking weather
-		unsubscribe()								// reset everything
-		subscribe switches, 'switch.off', cycleOff	// and start setting up for today's cycle
+		atomicState.run = true						// set true before checking weather, atomic in case we crash!
+		unsubAllBut()								// reset everything
+		subscribe(switches, 'switch.off', cycleOff)	// and start setting up for today's cycle
 
-		runIn(30, checkRunMap)						// schedule checkRunMap() before weather check, gives isWeather 30s to complete
-		
-		//log.debug "preCheck(): before note"
+		runIn(45, checkRunMap)						// schedule checkRunMap() before doing weather check, gives isWeather 45s to complete
+													// because that seems to be a little more than the max that the ST platform allows
+
         note('active', "${app.label} starting pre-check", 'i')
-        //log.debug "preCheck(): after note"	
 
-       	if (isWeather()) {
-       		// note('skipping', "${app.label} skipping today due to weather conditions", 'i')
-       		state.run = false						// tell checkRunMap NOT to run
-            unsubscribe(switches)					// let go of the controller events
+       	if (isWeather()) {							// set adjustments and check if we shold skip because of rain
+       		resetEverything()						// if so, clean up our subscriptions
            	switches.programOff()					// and release the controller
-
-           	if (enableManual) subscribe(switches, 'switch.programOn', manualStart)
 		}
 	}
 }
 
 //start water program
 def cycleOn(){       
-    
-	if (state.run) {				//block if manually stopped during precheck which goes to cycleOff
+	if (atomicState.run == true) {				//block if manually stopped during precheck which goes to cycleOff
         if (sync) {
 			if ((sync.currentSwitch != 'off') || sync.currentStatus == 'pause') {
-                subscribe sync, 'switch.off', syncOn
+                subscribe(sync, 'switch.off', syncOn)
                 if (!state.startTime && state.pauseTime) state.pauseTime = null		// haven't started yet
                 note('pause', "Waiting for ${sync} to complete before starting ${app.label}", 'w')
                 return
@@ -1075,31 +1164,30 @@ def cycleOn(){
         }
 
         // master schedule complete (or null), check the control contacts
-        if (!contacts || !contacts.currentContact.contains('open')) {		// make sure ALL of the contacts are closed
+        if (!isWaterStopped()) {		// make sure ALL the contacts and toggles aren't paused
             // All clear, let's start running!
-            subscribe switches, 'switch.off', cycleOff
-            subscribe contacts, 'contact.open', doorOpen
+            subscribe(switches, 'switch.off', cycleOff)
+            subWaterStop()		// subscribe to all the pause contacts and toggles
             resume()
             
             // send the notification AFTER we start the controller (in case we run over our execution time limit)
             String newString = ''
-            state.startTime = new Date()
-            if (state.pauseTime) state.pauseTime = null
-            if (state.totalTime) {
-                String finishTime = new Date(now() + (60000 * state.totalTime).toLong()).format('EEEE @ h:mm a', location.timeZone)
-                newString = ' - ETC: ' + finishTime
+            if (!state.startTime) {
+            	state.startTime = new Date()				// if we haven't already started
+            	if (atomicState.finishTime) atomicState.finishTime = null		// so recovery in busy() knows we didn't finith 
+            	if (state.pauseTime) state.pauseTime = null
+            	if (state.totalTime) {
+                	String finishTime = new Date(now() + (60000 * state.totalTime).toLong()).format('EEEE @ h:mm a', location.timeZone)
+                	newString = ' - ETC: ' + finishTime
+            	}
+            	note('active', "${app.label} starting" + newString, 'd')
             }
-            note('active', "${app.label} starting" + newString, 'd')
         }
         else {
-        	// log.debug "contacts ${contacts.currentContact}"
             // Ready to run, but one of the control contacts is still open, so we wait
-            // subscribe switches, 'switch.off', cycleOff	// this is weird- does it allow someone to stop the schedule while in pause?
-			subscribe contacts, 'contact.closed', doorClosed
-            state.pauseTime = new Date()
-
+			subWaterStart()										// one of them is paused, let's wait until the are all clear!
 			//switches.programOff()
-            note('pause', "One of ${contacts.displayName} is open, ${app.label} paused watering", 'w')
+            note('pause', "${getWaterStopList()} paused ${app.label} watering", 'w')
         }
     }
 }
@@ -1107,22 +1195,21 @@ def cycleOn(){
 //when switch reports off, watering program is finished
 def cycleOff(evt){
 	//fix to say manually turned off?? //
-	if (contacts) unsubscribe(contacts)
-    unsubscribe(switches)
+	unsubAllBut()
     switches.programOff()
     
     unschedule(cycleOn)
     
     if (enableManual) subscribe(switches, 'switch.programOn', manualStart)
-    // if all the control contacts are closed, we are done...else we're waiting for one of them to close
-    if (state.run && (!contacts || !contacts.currentContact.contains('open'))) {	// paused ends when ALL of the contacts are closed
-    	state.finishTime = new Date()
-    	String finishTime = state.finishTime.format('h:mm a', location.timeZone)
+    if (atomicState.run == true) {
+    	def ft = new Date()
+    	atomicState.finishTime = ft									// this is important to reset the schedule after failures in busy()
+    	String finishTime = ft.format('h:mm a', location.timeZone)
     	note('finished', "${app.label} finished watering at ${finishTime}", 'i')
     } else {
     	log.debug "${switches} turned off"		// is this a manual off? perhaps we should send a note?
     }
-	state.run = false
+	atomicState.run = false
 }
 
 //run check each day at scheduled time
@@ -1144,8 +1231,8 @@ def checkRunMap(){
     }    
     
 	//check if isWeather returned true or false before checking
-    if (state.run){
-    	log.debug "checkRunMap(): state.run = true"
+    if (atomicState.run == true){
+    	log.debug "checkRunMap(): atomicState.run = true"
 
         //get & set watering times for today
         def runNowMap = []    
@@ -1156,6 +1243,8 @@ def checkRunMap(){
 
             if (state.startTime) state.startTime = null
             if (state.pauseTime) state.pauseTime = null
+            // leave atomicState.finishTime alone so that recovery in busy() knows we never started if cycleOn() doesn't clear it
+            
             String newString = ''
             if (state.totalTime) {
                 int hours = state.totalTime / 60			// DON'T Math.round this one
@@ -1169,14 +1258,14 @@ def checkRunMap(){
         }
         else {
             unsubscribe(switches)
-            if (contacts) unsubscribe(contacts)
+            unsubWaterStoppers()
             switches.programOff()
             if (enableManual) subscribe(switches, 'switch.programOn', manualStart)
             note('skipping', "${app.label} - No watering today", 'd')
-            state.run = false 		// do this last, so that the above note gets sent to the controller
+            atomicState.run = false 		// do this last, so that the above note gets sent to the controller
         }	
     } else {
-    	log.debug "checkRunMap(): state.run = false"  	// isWeather cancelled us out before we got started
+    	log.debug "checkRunMap(): atomicState.run = false"  	// isWeather cancelled us out before we got started
     }
 }
 
@@ -1264,7 +1353,15 @@ def cycleLoop(int i)
         zone++  
     }
 	if (soilString) {
-        note('moisture', "Moisture Sensors:\n" + soilString,'m')
+		int seasonAdjust = 0
+    	String seasonStr = ''
+    	String plus = ''
+    	if (isSeason && (state.seasonAdj != 100.0) && (state.seasonAdj != 0)) {
+    		float sadj = state.seasonAdj - 100.0
+    		if (sadj > 0.0) plus = '+'											//display once in cycleLoop()
+    		if (sadj != 0.0) seasonStr = "Adjusting ${plus}${Math.round(sadj)}% for weather\n"
+    	}
+        note('moisture', "Moisture Sensors:\n" + seasonStr + soilString,'m')
     }
         
     if (!runNowMap) return runNowMap			// nothing to run today
@@ -1274,15 +1371,13 @@ def cycleLoop(int i)
 	runIn(30, writeCycles)
 	
 	// meanwhile, calculate our total run time
-
     int pDelay = 0
-
     if ((pumpDelay != null) && pumpDelay.isNumber()) pDelay = pumpDelay.toInteger()
-    
-    totalTime += Math.round(((pDelay * (totalCycles-1)) / 60.0) + 0.5)  // add in the pump startup and inter-zone delays
+    totalTime += Math.round(((pDelay * (totalCycles-1)) / 60.0))  // add in the pump startup and inter-zone delays
     state.totalTime = totalTime
-    if (state.startTime) state.startTime = null		// haven't started yet
-    if (state.pauseTime) state.pauseTime = null		// and we haven't paused yet
+    if (state.startTime) state.startTime = null					// haven't started yet
+    if (state.pauseTime) state.pauseTime = null					// and we haven't paused yet
+// cycleOn() will do this    if (atomicState.finishTime) atomicState.finishTime = null	// and of course we haven't finished yet either
 
     return runNowMap += pumpMap    
 }
@@ -1317,34 +1412,55 @@ def syncOn(evt){
     note('active', "${sync} finished, starting ${app.label} in 30 seconds", 'i')
 }
 
-def doorOpen(evt){
+// handle start of pause session
+def waterStop(evt){
+	log.debug "waterStop: ${evt.displayName}"
+	
 	if (!state.pauseTime) {			// only need to do this for the first event if multiple contacts
 	    state.pauseTime = new Date()
 	    unsubscribe(switches)
 	    switches.programOff()		// stop the controller
-	    subscribe contacts, 'contact.closed', doorClosed
+	    subWaterStart()
+		
+		String cond = ''
+		if (contacts && contacts.contains(evt.device)) 
+			cond = (settings.contactStop == 'open') ? 'opened' : 'closed'
+		else
+			if (toggles && toggles.contains(evt.device)) cond = (settings.toggleStop == 'on') ? 'turned on' : 'turned off'
+			
 		runIn(15, subOff)			// allow time for the above programOff() to complete...
-
-	    note('pause', "${evt.displayName} opened, ${app.label} watering paused", 'c')
+	    note('pause', "${evt.displayName} ${cond}, ${app.label} watering paused", 'c')
 	}
 }
 
 def subOff() {
-	subscribe switches, 'switch.off', cycleOff
+	subscribe(switches, 'switch.off', cycleOff)
 }
-     
-def doorClosed(evt){
-	if (contacts && !contacts.currentContact.contains('open')) { // only if ALL of the selected contacts are not open
-		runIn(contactDelay * 60, cycleOn)
+
+// handle end of pause session     
+def waterStart(evt){
+	if (!isWaterStopped()){ 					// only if ALL of the selected contacts are not open
+		runIn(contactDelay * 60, cycleOn)		// this isn't right...
+	
+		log.debug "waterStart(): enabling device is ${evt.device}"
+		
+		String cond = ''
+		if (contacts && contacts.contains(evt.device)) 
+			cond = (settings.contactStop == 'open') ? 'closed' : 'opened'
+		else
+			if (toggles && toggles.contains(evt.device)) cond = (settings.toggleStop == 'on') ? 'turned off' : 'turned on'
 	
 		String newString = ''
 		if (state.pauseTIme && state.startTime) {
 			def elapsedTime = (new Date(now() + (60000 * contactDelay).toLong())) - state.pauseTime
-    		String finishTime = (state.startTime + state.totalTime + elapsedTime).format('EEEE @ h:mm a', location.timeZone) 
+			state.totalTime = state.totalTime + elapsedTime		// keep track of the pauses, too
+    		String finishTime = (state.startTime + state.totalTime).format('EEEE @ h:mm a', location.timeZone) 
     		state.pauseTime = null
     		newString = ' - New ETC: ' + finishTime
 		}
-    	note('active', "${evt.displayName} closed, ${app.label} will resume watering in ${contactDelay} minute(s)" + newString, 'i')    
+    	note('active', "${evt.displayName} ${cond}, ${app.label} will resume watering in ${contactDelay} minute(s)" + newString, 'i')    
+	} else {
+		log.debug "waterStart(): one down - ${evt.displayName}"
 	}
 }
 
@@ -1494,12 +1610,12 @@ def moisture(int i)
     }
     
     int seasonAdjust = 0
-    String seasonStr = ''
-    String plus = ''
+    //String seasonStr = ''
+    //String plus = ''
     if (isSeason && (state.seasonAdj != 100.0) && (state.seasonAdj != 0)) {
     	float sadj = state.seasonAdj - 100.0
-    	if (sadj > 0.0) plus = '+'
-    	if (sadj != 0.0) seasonStr = "seasonal ${plus}${Math.round(sadj)}%, "
+    	//if (sadj > 0.0) plus = '+'											//display once in cycleLoop()
+    	//if (sadj != 0.0) seasonStr = "seasonal ${plus}${Math.round(sadj)}%, "
     	seasonAdjust = Math.round(((sadj / 100.0) * tpw)+0.5)
     }
  	if (isDebug) log.debug "moisture(${i}): diffHum: ${diffHum}, tpwAdjust: ${tpwAdjust} seasonAdjust: ${seasonAdjust}"
@@ -1543,14 +1659,15 @@ def moisture(int i)
     
     String moistureSum = ''
     String adjStr = ''
-    plus = ''
-    if (adjust > 0) plus = '+'
-    if (adjusted != 0) adjStr = ", ${seasonStr}adjusted ${plus}${adjusted} mins"
+    String plus = ''
+    if (adjusted > 0) plus = '+'
+    if (adjusted != 0) adjStr = ", ${plus}${adjusted} min"
+    if (Math.abs(adjusted) > 1) adjStr += 's'
     if (diffHum >= 0.0) { 				// water only if ground is drier than SP
     	moistureSum = "${settings."name${i}"}, Water: ${settings."sensor${i}"} @ ${latestHum}% (${spHum}%)${adjStr} (${newTPW} min/wk)\n"
         return [1, moistureSum]
     } else { 							// not watering
-        moistureSum = "${settings."name${i}"}, Skip: ${settings."sensor${i}"} @ ${latestHum}% (${spHum}%)${adjStr} (${tpw} min/wk)\n"
+        moistureSum = "${settings."name${i}"}, Skip: ${settings."sensor${i}"} @ ${latestHum}% (${spHum}%)${adjStr} (${newTPW} min/wk)\n"
     	return [0, moistureSum]
     }
     return [0, moistureSum]
@@ -1582,10 +1699,10 @@ def note(String status, String message, String type) {
 	
 	// only send status updates to the controller if WE are running (nobody else is), or we aregetting ready to run
 	// log.debug "note(): ${switches.currentSwitch} ${switches.currentStatus}"
-	if ((state.run == true) || ((switches.currentSwitch == 'off') && (!switches.currentStatus == 'pause'))) {
-		log.debug "note(): notifying Switch"
-		int length = Math.min(message.length(), 80)
-    	switches.notify(status, message.take(length))	// let's also shorten the text (lighten the load on the event system)
+	if ((atomicState.run == true) || ((switches.currentSwitch == 'off') && (switches.currentStatus != 'pause'))) {
+//		log.debug "note(): notifying Switch"
+//		int length = Math.min(message.length(), 80)
+    	switches.notify(status, message /*.take(length) */ )	// let's also shorten the text (lighten the load on the event system)
 	}
 	
     if(settings.notify) {
@@ -1795,10 +1912,10 @@ boolean isWeather(){
 	// get only the data we need
 	String featureString = 'forecast/conditions/geolookup'
 	if (isSeason) featureString += '/astronomy'
-	def startTime = new Date()
+	//def startTime = new Date()
     Map wdata = getWeatherFeature(featureString, wzipcode)
-    def endTime = new Date()
-    log.debug "getWeatherFeature elapsed time: ${endTime - startTime}ms"
+    //def endTime = new Date()
+    //log.debug "getWeatherFeature elapsed time: ${endTime - startTime}ms"
     if (wdata != null) {
     	if (isDebug) log.debug wdata.response
 		if (wdata.response.containsKey('error')) {
@@ -2179,7 +2296,7 @@ def createDPWMap() {
               if(maxday == days[d])
                 max = -1
 	      }
-          //log.debug"max: ${max}  maxday: ${maxday}"
+          //log.debug "max: ${max} maxday: ${maxday}"
 	      days[a-1] = maxday
         }
       }
