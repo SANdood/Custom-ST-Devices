@@ -1,5 +1,5 @@
 /**
- *  Spruce Scheduler Pre-release V2.52.7 - Updated 9/12/2016, BAB
+ *  Spruce Scheduler Pre-release V2.52.7 - Updated 9/13/2016, BAB
  *
  *	
  *  Copyright 2015 Plaid Systems
@@ -179,18 +179,46 @@ def weatherPage() {
 def zipcodePage() {
     return dynamicPage(name: 'zipcodePage', title: 'Spruce weather station setup') {
         section(''){
-        	input 'zipcode', 'text', title: 'Zipcode or WeatherUnderground station id. Default value is current location.', defaultValue: "${location.zipCode}", required: false, submitOnChange: true
+        	input(name: 'zipcode', type: 'text', title: 'Zipcode or WeatherUnderground station id. Default value is current Zip code', 
+        		defaultValue: getPWSID() /*"${location.zipCode}"*/, required: false, submitOnChange: true )
         }
          
         section(''){
-        	href(title: 'Search WeatherUnderground.com for weather stations',
-             	description: 'After page loads, select Change Station for a list of weather stations.  You will need to copy the station code into the zipcode field above',
+        	paragraph(image: 'http://www.plaidsystems.com/smartthings/wu.png', title: 'WeatherUnderground Personal Weather Stations (PWS)',
+        				required: false,
+        				'To automatically select the PWS nearest to your hub location, select the toggle below and clear the ' + 
+        				'location field above')
+        	input(name: 'nearestPWS', type: 'bool', title: 'Use nearest PWS', options: ['true', 'false'], 
+						defaultValue: false, submitOnChange: true)
+        	href(title: 'Or, Search WeatherUnderground.com for your desired PWS',
+        				description: 'After page loads, select "Change Station" for a list of weather stations.  ' +
+        				'You will need to copy the station code into the location field above',
              	required: false, style:'embedded',             
-             	image: 'http://www.plaidsystems.com/smartthings/wu.png',
-             	url: 'http://www.wunderground.com/q/${location.zipCode}'
-            )
+             	url: (location.latitude && location.longitude)? "http://www.wunderground.com/cgi-bin/findweather/hdfForecast?query=${location.latitude}%2C${location.longitude}" :
+             		 "http://www.wunderground.com/q/${location.zipCode}")
         }
     }
+}
+
+private String getPWSID() {
+	String PWSID = location.zipCode
+	if (zipcode) PWSID = zipcode
+	if (nearestPWS && !zipcode) {
+		// find the nearest PWS to the hub's geo location
+		String geoLocation = location.zipCode
+		// use coordinates, if available
+		if (location.latitude && location.longitude) geoLocation = "${location.latitude}%2C${location.longitude}"  
+    	Map wdata = getWeatherFeature('geolookup', geoLocation)
+    	if (wdata && wdata.response && !wdata.response.containsKey('error')) {	// if we get good data
+    		if (wdata.response.features.containsKey('geolookup') && (wdata.response.features.geolookup.toInteger() == 1) && wdata.location) {
+    			PWSID = wdata.location.nearby_weather_stations.pws.station[0].id
+    		}
+    		else log.debug "bad response"
+    	}
+    	else log.debug "null or error"
+	}
+	log.debug "Nearest PWS ${PWSID}"
+	return PWSID
 }
  
 private String startTimeString(){  
@@ -231,7 +259,8 @@ private String waterStoppersString(){
 	} else {
 		stoppers += ': None\n'
 	}
-	int cd = settings.contactDelay
+	int cd = 1
+	if (contactDelay && contactDelay.isNumber()) cd = contactDelay.toInteger()
 	String s = ''
 	if (cd > 1) s = 's'
 	stoppers += "Restart Delay: ${cd} min${s}\n"
@@ -1384,7 +1413,7 @@ def cycleLoop(int i)
     		int iadj = Math.round(sadj)
     		if (iadj != 0) seasonStr = "Adjusting ${plus}${iadj}% for weather\n"
     	}
-        note('moisture', "${app.label}:\nMoisture Sensors:\n" + seasonStr + soilString,'m')
+        note('moisture', "${app.label} Moisture Sensors:\n" + seasonStr + soilString,'m')
     }
         
     if (!runNowMap) return runNowMap			// nothing to run today
@@ -1920,12 +1949,11 @@ def setSeason() {
 def getRainToday() {
 	def wzipcode = zipString()   
     Map wdata = getWeatherFeature('conditions', wzipcode)
-    if (wdata == null) {
+    if (!wdata) {
     	// log.debug "getRainTotal ${zipString()} error: wdata is null"  // note() does the log.debug now
     	note('warning', "${app.label}: Please check Zipcode setting, error: null", 'w')
     } else {
-
-		if (wdata.response.containsKey('error')) {
+		if (!wdata.response || wdata.response.containsKey('error')) {
 			log.debug wdata.response
    			note('warning', "${app.label}: Please check Zipcode setting, error:\n${wdata.response.error.type}: ${wdata.response.error.description}" , 'w')
 		} else {
@@ -1933,7 +1961,8 @@ def getRainToday() {
 			if (wdata.current_observation.precip_today_in.isNumber()) { // WU can return "t" for "Trace" - we'll assume that means 0.0
             	TRain = wdata.current_observation.precip_today_in.toFloat()
 				if (TRain > 25.0) TRain = 25.0
-                log.debug "getRainToday: ${wdata.current_observation.precip_today_in} / ${TRain}"
+				else if (TRain < 0.0) TRain = 0.0			// WU sometimes returns -99999 for "estimated" locations
+                log.debug "getRainToday(): ${wdata.current_observation.precip_today_in} / ${TRain}"
             }
     		int day = getWeekDay()						// what day is it today?
             if (day == 7) day = 0						// adjust: state.Rain order is Su,Mo,Tu,We,Th,Fr,Sa
@@ -1953,13 +1982,14 @@ boolean isWeather(){
    	if (isDebug) log.debug "isWeather(): ${wzipcode}"   
 
 	// get only the data we need
-	String featureString = 'forecast/conditions/geolookup'
+	// Move geolookup to installSchedule()
+	String featureString = 'forecast/conditions'
 	if (isSeason) featureString += '/astronomy'
 	def startMS= now()
     Map wdata = getWeatherFeature(featureString, wzipcode)
     def endMS = now()
-    log.debug "getWeatherFeature elapsed time: ${endMS - startMS}ms"
-    if (wdata != null) {
+    log.debug "isWeather() getWeatherFeature elapsed time: ${endMS - startMS}ms"
+    if (wdata && wdata.response) {
     	if (isDebug) log.debug wdata.response
 		if (wdata.response.containsKey('error')) {
         	if (wdata.response.error.type != 'invalidfeature') {
@@ -1976,6 +2006,15 @@ boolean isWeather(){
     	return false
     }
     
+    String city = wzipcode
+    if (wdata.current_observation) { //wdata.response.features.containsKey('conditions') || (wdata.response.features.conditions.toInteger() == 1) || wdata.current_observation) { 
+    	if (wdata.current_observation.observation_location.city != '')
+    		city = wdata.current_observation.observation_location.city 
+    	else
+    		city = wdata.current_observation.display_location.full
+    	if (wdata.current_observation.estimated.estimated) city += ' (estimated)'
+    }
+    
     // OK, we have good data, let's start the analysis
     float qpfTodayIn = 0.0
     float qpfTomIn = 0.0
@@ -1989,7 +2028,7 @@ boolean isWeather(){
     	if (isDebug) log.debug 'isWeather(): isRain'
     	
     	// Get forecasted rain for today and tomorrow
-		if (!wdata.response.features.containsKey('forecast') || (wdata.response.features.forecast.toInteger() != 1) || (wdata.forecast == null)) {
+		if (!wdata.forecast) { // || !wdata.response.features.containsKey('forecast') || (wdata.response.features.forecast.toInteger() != 1)) {
     		log.debug 'isWeather(): Unable to get weather forecast.'
     		return false
     	}
@@ -1999,12 +2038,14 @@ boolean isWeather(){
 		if (wdata.forecast.simpleforecast.forecastday[1].pop.isNumber()) popTom = wdata.forecast.simpleforecast.forecastday[1].pop.toFloat()
 		
     	// Get rainfall so far today
-		if (!wdata.response.features.containsKey('conditions') || (wdata.response.features.conditions.toInteger() != 1) || (wdata.current_observation == null)) {
+		if (!wdata.current_observation) { // || !wdata.response.features.containsKey('conditions') || (wdata.response.features.conditions.toInteger() != 1)) {
     		log.debug 'isWeather(): Unable to get current weather conditions.'
     		return false
     	}
 		if (wdata.current_observation.precip_today_in.isNumber()) {
        		TRain = wdata.current_observation.precip_today_in.toFloat()
+       		if (TRain > 25.0) TRain = 25.0		// Ignore runaway weather
+       		else if (TRain < 0.0) TRain = 0.0		// WU return -9999 for estimated locations
     	}
     	if (TRain > (qpfTodayIn * (popToday / 100.0))) {
     		qpfTodayIn = TRain	// already have more rain than forecast for today
@@ -2031,20 +2072,13 @@ boolean isWeather(){
      
     if (isDebug) log.debug 'isWeather(): build report'      
 
-    String city = wzipcode
-	if (wdata.response.features.containsKey('geolookup') && (wdata.response.features.geolookup.toInteger() == 1) && (wdata.location != null)) {
-    	city = wdata.location.city
-    }
-
-    if (isDebug) log.debug 'isWeather(): get highs'
-
     //get highs
    	int highToday = 0
    	int highTom = 0
    	if (wdata.forecast.simpleforecast.forecastday[0].high.fahrenheit.isNumber()) highToday = wdata.forecast.simpleforecast.forecastday[0].high.fahrenheit.toInteger()
    	if (wdata.forecast.simpleforecast.forecastday[1].high.fahrenheit.isNumber()) highTom = wdata.forecast.simpleforecast.forecastday[1].high.fahrenheit.toInteger()
    	
-    String weatherString = "${app.label}:\n${city} weather\n TDA: ${highToday}F"
+    String weatherString = "${app.label} ${city} weather:\n TDA: ${highToday}F"
     if (isRain) weatherString += ", ${qpfTodayIn}in rain (${Math.round(popToday)}% PoP)"
     weatherString += "\n TMW: ${highTom}F"
     if (isRain) weatherString += ", ${qpfTomIn}in rain (${Math.round(popTom)}% PoP)\n YDA: ${YRain}in rain"
@@ -2052,7 +2086,7 @@ boolean isWeather(){
     if (isSeason)
     {   
 		if (!isRain) { // we need to verify we have good data first if we didn't do it above
-			if (!wdata.response.features.containsKey('forecast') || (wdata.response.features.forecast.toInteger() != 1) || (wdata.forecast == null)) {
+			if (!wdata.forecast) { //!wdata.response.features.containsKey('forecast') || (wdata.response.features.forecast.toInteger() != 1) || (wdata.forecast == null)) {
     			log.debug 'Unable to get weather forecast.'
     			return false
     		}
@@ -2108,31 +2142,29 @@ boolean isWeather(){
         // Apply seasonal adjustment on Monday each week or at install
         if ((getWeekDay() == 1) || (state.weekseasonAdj == 0)) {
             //get daylight
- 			if (wdata.response.features.containsKey('astronomy') && (wdata.response.features.astronomy.toInteger() == 1) && (wdata.moon_phase != null)) {
+ 			if (!wdata.sun_phase) { //wdata.response.features.containsKey('astronomy') && (wdata.response.features.astronomy.toInteger() == 1) && (wdata.moon_phase != null)) {
             	int getsunRH = 0
             	int getsunRM = 0
             	int getsunSH = 0
             	int getsunSM = 0
             	
-            	if (wdata.moon_phase.sunrise.hour.isNumber()) 	getsunRH = wdata.moon_phase.sunrise.hour.toInteger()
-        		if (wdata.moon_phase.sunrise.minute.isNumber()) getsunRM = wdata.moon_phase.sunrise.minute.toInteger()
-            	if (wdata.moon_phase.sunset.hour.isNumber()) 	getsunSH = wdata.moon_phase.sunset.hour.toInteger()
-            	if (wdata.moon_phase.sunset.minute.isNumber()) 	getsunSM = wdata.moon_phase.sunset.minute.toInteger()
+            	if (wdata.sun_phase.sunrise.hour.isNumber()) 	getsunRH = wdata.sun_phase.sunrise.hour.toInteger()
+        		if (wdata.sun_phase.sunrise.minute.isNumber()) 	getsunRM = wdata.sun_phase.sunrise.minute.toInteger()
+            	if (wdata.sun_phase.sunset.hour.isNumber()) 	getsunSH = wdata.sun_phase.sunset.hour.toInteger()
+            	if (wdata.sun_phase.sunset.minute.isNumber()) 	getsunSM = wdata.sun_phase.sunset.minute.toInteger()
 
             	int daylight = ((getsunSH * 60) + getsunSM)-((getsunRH * 60) + getsunRM)
 				if (daylight >= 850) daylight = 850
             
             	//set seasonal adjustment
-            	//state.weekseasonAdj = Math.round((daylight/700 * avgHigh/75) * ((1-(humWeek/100)) * avgHigh/75)*100)
-            	//seasonal q factor
-    			float qFact = 0.75
-            	//state.weekseasonAdj = Math.round((daylight/700.0) * (avgHigh/70.0) * (qFact * 100.0))
+            	//seasonal q (fudge) factor
+    			float qFact = 75.0
             	
             	// (Daylight / 11.66 hours) * ( Average of ((Avg Temp / 70F) + ((1/2 of Average Humidity) / 65.46))) * calibration quotient
             	// Longer days = more water		(day length constant = approx USA day length at fall equinox)
             	// Higher temps = more water
             	// Lower humidity = more water	(humidity constant = USA National Average humidity in July)
-            	state.weekseasonAdj = Math.round((daylight / 700.0) * (((avgHigh / 70.0) + (1.5-((avgHum * 0.5) / 65.46))) / 2.0) * (qFact * 100.0))
+            	state.weekseasonAdj = Math.round((daylight / 700.0) * (((avgHigh / 70.0) + (1.5-((avgHum * 0.5) / 65.46))) / 2.0) * qFact)
 
             	//apply seasonal time adjustment
             	String plus = ''
