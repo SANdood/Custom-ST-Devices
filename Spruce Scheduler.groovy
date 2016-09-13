@@ -1197,7 +1197,7 @@ def preCheck() {
            	switches.programOff()					// and release the controller
 		} 
 		else {
-			log.debug "preCheck(): jacking schedule"	//COOL! We finished before timing out, and we're supposed to water today
+			log.debug 'preCheck(): running checkRunMap in 2 seconds!'	//COOL! We finished before timing out, and we're supposed to water today
 			runIn(2, checkRunMap)	// jack the schedule so it runs sooner!
 		}
 	}
@@ -1345,8 +1345,8 @@ def cycleLoop(int i)
     while(zone <= 16)
     {
         rtime = 0
-        
-        if( (settings."zone${zone}" && (settings."zone${zone}" != 'Off')) && (nozzle(zone) != 4) && zoneActive(zone.toString()) )
+        def setZ = settings."zone${zone}"
+        if( (setZ && (setZ != 'Off')) && (nozzle(zone) != 4) && zoneActive(zone.toString()) )
         {
 		  	// First check if we run this zone today, use either dpwMap or even/odd date
 		  	dpw = getDPW(zone)          
@@ -1626,8 +1626,12 @@ def moisture(int i)
 	boolean isDebug = false
 	if (isDebug) log.debug "moisture(${i})"
 	
+	def startMsecs = now()
+	def endMsecs = 0
 	// No Sensor on this zone or manual start skips moisture checking altogether
-	if (settings."sensor${i}" == null || i == 0) {     
+	if ((i == 0) || !settings."sensor${i}") {
+		endMsecs = now()
+    	log.debug "moisture(${i}) returns 1 - elapsedMsecs: ${endMsecs - startMsecs}"
         return [1,'']
     }
 
@@ -1635,19 +1639,27 @@ def moisture(int i)
     int hours = 48
     def yesterday = new Date(now() - (1000 * 60 * 60 * hours).toLong())    
     def lastHumDate = settings."sensor${i}".latestState('humidity').date
-    if (lastHumDate < yesterday) return [1, "Please check ${settings."sensor${i}"}, no humidity reports in the last ${hours} hours\n"]
+    if (lastHumDate < yesterday) {
+    	endMsecs = now()
+    	log.debug "moisture(${i}) returns 1 - elapsedMsecs: ${endMsecs - startMsecs}"
+    	return [1, "Please check ${settings."sensor${i}"}, no humidity reports in the last ${hours} hours\n"]
+    }
 
     float latestHum = settings."sensor${i}".latestValue('humidity').toFloat()	// state = 29, value = 29.13
     int spHum = getDrySp(i)
     if (!learn)
     {
-        // no Delay mode, only looks at target moisture level, doesn't try to adjust tpw
+        // in Delay mode, only looks at target moisture level, doesn't try to adjust tpw
 		if(latestHum <= spHum.toFloat()) {
            //dry soil
-           return [1,"${settings."name${i}"}, Watering: ${settings."sensor${i}"} reads ${latestHum}%, SP is ${spHum}%\n"]              
+    	 	endMsecs = now()
+    		log.debug "moisture(${i}) returns 1 - elapsedMsecs: ${endMsecs - startMsecs}"
+           	return [1,"${settings."name${i}"}, Watering: ${settings."sensor${i}"} reads ${latestHum}%, SP is ${spHum}%\n"]              
         } else {
-           //wet soil
-           return [0,"${settings."name${i}"}, Skipping: ${settings."sensor${i}"} reads ${latestHum}%, SP is ${spHum}%\n"]           
+        	//wet soil
+           	endMsecs = now()
+    		log.debug "moisture(${i}) returns 0 - elapsedMsecs: ${endMsecs - startMsecs}"
+           	return [0,"${settings."name${i}"}, Skipping: ${settings."sensor${i}"} reads ${latestHum}%, SP is ${spHum}%\n"]           
         }
     }
 
@@ -1655,13 +1667,13 @@ def moisture(int i)
     int tpw = getTPW(i)
     int dpw = getDPW(i)
     int cpd = cycles(i)
-    float tpwFloat = tpw.toFloat()
-	float dpwFloat = dpw.toFloat()
-	float cpdFloat = cpd.toFloat()
+    //float tpwFloat = tpw.toFloat()
+	//float dpwFloat = dpw.toFloat()
+	//float cpdFloat = cpd.toFloat()
     if (isDebug) log.debug "moisture(${i}): tpw: ${tpw}, dpw: ${dpw}, cycles: ${cpd} (before adjustment)"
     
     float diffHum = 0.0
-    if (latestHum > 0.0) diffHum = (spHum.toFloat() - latestHum) / 100.0
+    if (latestHum > 0.0) diffHum = (spHum - latestHum) / 100.0
     else {
     	diffHum = 0.02 // Safety valve in case sensor is reporting 0% humidity (e.g., somebody pulled it out of the ground or flower pot)
     	note('warning', "${app.label}: Please check sensor ${settings."sensor${i}"}, it is currently reading 0%", 'a')
@@ -1672,42 +1684,39 @@ def moisture(int i)
 	int tpwAdjust = 0
 	
     if (diffHum > 0.01) { 				// only adjust tpw if more than 1% of target SP
-  		tpwAdjust = Math.round(((tpwFloat * diffHum) + 0.5) * dpwFloat * cpdFloat)	// Compute adjustment as a function of the current tpw
+  		tpwAdjust = Math.round(((tpw * diffHum) + 0.5) * dpw * cpd)	// Compute adjustment as a function of the current tpw
     	float adjFactor = 2.0 / state.daysAvailable.toFloat()		// Limit adjustments to 200% per week - spread over available days
-  		if (tpwAdjust > (tpwFloat * adjFactor)) tpwAdjust = Math.round((tpwFloat * adjFactor) + 0.5) 		// limit fast rise
+  		if (tpwAdjust > (tpw * adjFactor)) tpwAdjust = Math.round((tpw * adjFactor) + 0.5) 		// limit fast rise
 		if (tpwAdjust < minimum) tpwAdjust = minimum      // but we need to move at least 1 minute per cycle per day to actually increase the watering time
     } else if (diffHum < -0.01) {
     	if (diffHum < -0.05) diffHum = -0.05			// try not to over-compensate for a heavy rainstorm...
-    	tpwAdjust = Math.round(((tpwFloat * diffHum) - 0.5) * dpwFloat * cpdFloat)
+    	tpwAdjust = Math.round(((tpw * diffHum) - 0.5) * dpw * cpd)
     	float adjFactor = -0.6667 / state.daysAvailable.toFloat()		// Limit adjustments to 66% per week
-    	if (tpwAdjust < (tpwFloat * adjFactor)) tpwAdjust = Math.round((tpwFloat * adjFactor) - 0.5)	// limit slow decay to 12.5% of tpw per day
+    	if (tpwAdjust < (tpw * adjFactor)) tpwAdjust = Math.round((tpw * adjFactor) - 0.5)	// limit slow decay to 12.5% of tpw per day
 		if (tpwAdjust > (-1 * minimum)) tpwAdjust = -1 * minimum // but we need to move at least 1 minute per cycle per day to actually increase the watering time
     }
     
     int seasonAdjust = 0
-    //String seasonStr = ''
-    //String plus = ''
     if (isSeason && (state.seasonAdj != 100.0) && (state.seasonAdj != 0)) {
     	float sadj = state.seasonAdj - 100.0
-    	//if (sadj > 0.0) plus = '+'											//display once in cycleLoop()
-    	//if (sadj != 0.0) seasonStr = "seasonal ${plus}${Math.round(sadj)}%, "
-    	seasonAdjust = Math.round(((sadj / 100.0) * tpw)+0.5)
+    	seasonAdjust = Math.round(((sadj / 100.0) * tpw) + 0.5)
     }
  	if (isDebug) log.debug "moisture(${i}): diffHum: ${diffHum}, tpwAdjust: ${tpwAdjust} seasonAdjust: ${seasonAdjust}"
  	
  	// Now, adjust the tpw. With seasonal adjustments enabled, tpw can go up or down independent of the difference in the sensor vs SP
-    int newTPW = Math.round(tpw + tpwAdjust + seasonAdjust) 
+    int newTPW = tpw + tpwAdjust + seasonAdjust
 	int adjusted = 0
     if ((tpwAdjust + seasonAdjust) > 0) {							// needs more water
 		int perDay = 20
-        if (settings."perDay${i}") perDay = settings."perDay${i}".toInteger()
+		def perD = settings."perDay${i}"
+        if (perD) perDay = perD.toInteger()
         if (perDay < 8) perDay = 8
   		if (newTPW < perDay) {
   			newTPW = perDay							// arbitrary minimum if we're adjusting up from a small number
   		} else {
     		int maxTPW = state.daysAvailable * 120	// arbitrary maximum of 2 hours per available watering day per week
     		if (newTPW > maxTPW) newTPW = maxTPW	// initDPW() below may spread this across more days		
-    		if (newTPW >= (maxTPW*0.6667)) note('warning', "${app.label}: Please check ${settings["sensor${i}"]}, Zone ${i} time per week seems high: ${newTPW} mins/week",'w')
+    		if (newTPW >= (maxTPW*0.75)) note('warning', "${app.label}: Please check ${settings["sensor${i}"]}, Zone ${i} time per week seems high: ${newTPW} mins/week",'w')
   		}
     	state.tpwMap[i-1] = newTPW
     	dpw = initDPW(i)							// need to recalculate days per week since tpw changed - initDPW() stores the value into dpwMap
@@ -1716,9 +1725,8 @@ def moisture(int i)
     else if ((tpwAdjust + seasonAdjust) < 0) { 						// Needs less water
     	// Find the minimum tpw
 		int minLimit = 0
-		if (settings."minWeek${i}" != null) {		// if minWeek != 0, then use that as the minimum limiter
-    		if (settings."minWeek${i}" != 0) minLimit = settings."minWeek${i}".toInteger()
-		}
+		def minL = settings."minWeek${i}"
+		if (minL) minLimit = minL.toInteger()
 		if (minLimit > 0) {
 			if (newTPW < minLimit) newTPW = minLimit
 		} else if (newTPW < minimum) {
@@ -1731,6 +1739,7 @@ def moisture(int i)
         	adjusted = newTPW - tpw 	// so that the adjustment note is accurate
         }
     }
+    // else no adjustments, or adjustments cancelled each other out.
     
     String moistureSum = ''
     String adjStr = ''
@@ -1740,11 +1749,17 @@ def moisture(int i)
     if (Math.abs(adjusted) > 1) adjStr += 's'
     if (diffHum >= 0.0) { 				// water only if ground is drier than SP
     	moistureSum = "${settings."name${i}"}, Water: ${settings."sensor${i}"} @ ${latestHum}% (${spHum}%)${adjStr} (${newTPW} min/wk)\n"
+        endMsecs = now()
+        log.debug "moisture(${i}) returns 1 - elapsedMsecs: ${endMsecs - startMsecs}"
         return [1, moistureSum]
     } else { 							// not watering
         moistureSum = "${settings."name${i}"}, Skip: ${settings."sensor${i}"} @ ${latestHum}% (${spHum}%)${adjStr} (${newTPW} min/wk)\n"
+        endMsecs = now()
+    	log.debug "moisture(${i}) returns 0 - elapsedMsecs: ${endMsecs - startMsecs}"
     	return [0, moistureSum]
     }
+    endMsecs = now()
+    log.debug "moisture(${i}) returns 0 - elapsedMsecs: ${endMsecs - startMsecs}"
     return [0, moistureSum]
 }  
 
