@@ -934,9 +934,12 @@ private boolean attemptRecovery() {
     		case 'programOn':					// died while manual program running?    			
     		case 'programWait':					// looks like died previously before we got started, let's try to clean things up
 				log.debug "Looks like ${app.label} crashed recently...cleaning up"
-				switches.programOff()
 				resetEverything()
 				if (atomicState.finishTime) atomicState.finishTime = ""
+				if (atomicState.startTime) {
+					switches.programOff()		// only if we think we actually started
+					atomicState.startTime = ""	
+				}
 				return false
 				break
 
@@ -959,7 +962,7 @@ private def resetEverything() {
 }
 
 // unsubscribe from ALL events EXCEPT app.touch
-def unsubAllBut() {
+private def unsubAllBut() {
 	//unsubscribe(switches)
 	//unsubWaterStoppers()
 	//if (sync) unsubscribe(sync)
@@ -1154,10 +1157,13 @@ boolean busy(){
 }
 
 def busyOff(evt){
-	unsubscribe(switches)    						// we don't want any more button pushes until preCheck runs
-	Random rand = new Random() 						// just in case there are multiple schedules waiting on the same controller
-	int randomSeconds = rand.nextInt(49) + 10
-    runIn(randomSeconds, preCheck)   
+	def status = switches.currentStatus
+	if ((switches.currentSwitch == 'off') && (status != 'pause') && (status != 'active')) { // double check that prior schedule is done
+		unsubscribe(switches)    						// we don't want any more button pushes until preCheck runs
+		Random rand = new Random() 						// just in case there are multiple schedules waiting on the same controller
+		int randomSeconds = rand.nextInt(49) + 10
+    	runIn(randomSeconds, preCheck)					// no message so we don't clog the system
+	}
 }
 
 //run check every day
@@ -1200,7 +1206,7 @@ def cycleOn(){
 			if ((sync.currentSwitch != 'off') || sync.currentStatus == 'pause') {
                 subscribe(sync, 'switch.off', syncOn)
                 if (!state.startTime && state.pauseTime) state.pauseTime = null		// haven't started yet
-                note('pause', "${app.label}: Waiting for ${sync} to complete before starting", 'c')
+                note('pause', "${app.label}: Waiting for ${sync} to complete before starting", 'w')
                 return
             }
         }
@@ -1223,13 +1229,13 @@ def cycleOn(){
                 	newString = ' - ETC: ' + finishTime
             	}
             } 
-            else if (state.pauseTime) {				// resuming after a pause
+            else if (state.pauseTime) {		// resuming after a pause
 			// def elapsedTime = (new Date(now() + (60000 * contactDelay).toLong())) - (state.pauseTime as Date))
 				def elapsedTime = Math.round((now() - state.pauseTime) / 60000)	// convert ms to minutes
 				int tt = state.totalTime + elapsedTime + 1
-				state.totalTime = tt				// keep track of the pauses, and the 1 minute delay above
+				state.totalTime = tt		// keep track of the pauses, and the 1 minute delay above
     			String finishTime = new Date(state.startTime + (60000 * tt).toLong()).format('EEEE @ h:mm a', location.timeZone) 
-    			state.pauseTime = null				// no need to verify since we are resuming after a pause
+    			state.pauseTime = null
     			newString = ' - New ETC: ' + finishTime
             }
             note('active', "${app.label}: Resuming" + newString, 'd')
@@ -1237,7 +1243,7 @@ def cycleOn(){
         else {
             // Ready to run, but one of the control contacts is still open, so we wait
 			subWaterStart()										// one of them is paused, let's wait until the are all clear!
-            note('pause', "${app.label}: Watering paused by ${getWaterStopList()}", 'c')
+            note('pause', "${app.label}: Watering paused, ${getWaterStopList()}", 'c')
         }
     }
 }
@@ -1261,6 +1267,7 @@ def cycleOff(evt){
 
 //run check each day at scheduled time
 def checkRunMap(){
+
     // Create weekly water summary, if requested, on Tuesday
     if(settings.notify && settings.notify.contains('Weekly') && (getWeekDay() == 3))
     {
@@ -1268,9 +1275,7 @@ def checkRunMap(){
         String zoneSummary = ''
         while(zone <= 16) {
         	def zs = settings."zone${zone}"
-        	if(zs && (zs!= 'Off') && (nozzle(zone) != 4)) {
-			   zoneSummary += getaZoneSummary(zone)
-            }
+        	if(zs && (zs!= 'Off') && (nozzle(zone) != 4)) zoneSummary += getaZoneSummary(zone)
             zone++
         }
         // note() does the log.debug
@@ -1293,7 +1298,7 @@ def checkRunMap(){
             // leave atomicState.finishTime alone so that recovery in busy() knows we never started if cycleOn() doesn't clear it
             
             String newString = ''
-            int tt = state.totalTime		// avoid hitting state.variables repetitively
+            int tt = state.totalTime
             if (tt) {
                 int hours = tt / 60			// DON'T Math.round this one
                 int mins = tt - (hours * 60)
@@ -1342,6 +1347,7 @@ def cycleLoop(int i)
         if( (setZ && (setZ != 'Off')) && (nozzle(zone) != 4) && zoneActive(zone.toString()) )
         {
 		  	// First check if we run this zone today, use either dpwMap or even/odd date
+		  	dpw = getDPW(zone)          
           	int runToday = 0
           	// if manual, or every day allowed, or zone uses a sensor, then we assume we can today
           	//  - preCheck() has already verified that today isDay()
@@ -1350,10 +1356,8 @@ def cycleLoop(int i)
           	}
           	else {
 //          	if (runToday == 0) {									// figure out if we need to run (if we don't already know we do)
-          		dpw = getDPW(zone)
+          		dpw = getDPW(zone)									// figure out if we need to run (if we don't already know we do)
 	          	if (days && (days.contains('Even') || days.contains('Odd'))) {
-	          		// I'm not sure we need to do this check...if we are running, then preCheck has already determined today isDay()
-	          		// For zones with sensors, we won't get here anyway - do we need this for non-sensor zones?
             		def daynum = new Date().format('dd', location.timeZone)
             		int dayint = Integer.parseInt(daynum)
         			if(days.contains('Odd') && (((dayint +1) % Math.round(31 / (dpw * 4))) == 0)) runToday = 1
@@ -1368,7 +1372,7 @@ def cycleLoop(int i)
           	}
 			
 			// OK, we're supposed to run (or at least adjust the sensors)
-          	if(runToday == 1) 
+          	if (runToday == 1) 
           	{
 				def soil
             	if (i == 0) soil = moisture(0) 	// manual
@@ -1404,7 +1408,6 @@ def cycleLoop(int i)
     }
     
 	if (soilString) {
-
     	String seasonStr = ''
     	String plus = ''
     	float sa = state.seasonAdj
@@ -1412,9 +1415,9 @@ def cycleLoop(int i)
     		float sadj = sa - 100.0
     		if (sadj > 0.0) plus = '+'											//display once in cycleLoop()
     		int iadj = Math.round(sadj)
-    		if (iadj != 0) seasonStr = "Adjusting ${plus}${iadj}% for weather\n"
+    		if (iadj != 0) seasonStr = "Adjusting ${plus}${iadj}% for weather forecast\n"
     	}
-        note('moisture', "${app.label}: Spruce Sensors:\n" + seasonStr + soilString, 'm')
+        note('moisture', "${app.label} Spruce Sensors:\n" + seasonStr + soilString,'m')
     }
 
     if (!runNowMap) {
@@ -1461,9 +1464,13 @@ def resume(){
 }
 
 def syncOn(evt){
-    unsubscribe(sync)
-    runIn(30, cycleOn)
-    note('active', "${app.label}: ${sync} finished, watering starts in 30 seconds", 'i')
+	// double check that the switch is actually finished and not just paused
+	def status = settings.sync.currentStatus
+	if ((settings.sync.currentSwitch == 'off') && (status != 'pause') && (status != 'active')) {
+    	unsubscribe(settings.sync)
+		runIn(30, cycleOn)
+    	note('active', "${app.label}: ${settings.sync} finished, watering starts in 30 seconds", 'i')
+	} // else, it is just pausing...keep waiting for the next "off"
 }
 
 // handle start of pause session
@@ -1579,8 +1586,7 @@ int initTPW(int zone) {
     
     int n = nozzle(zone)
     def zn = settings."zone${zone}"
-    if ((!zn || (zn == 'Off')) || (n == 0) || (n == 4) || (plant(zone) == 0) || !zoneActive(zone.toString())) 
-    	return 0
+    if (!zn || (zn == 'Off') || (n == 0) || (n == 4) || (plant(zone) == 0) || !zoneActive(zone.toString())) return 0
     
     // apply gain adjustment
     float gainAdjust = 100.0
@@ -1676,28 +1682,24 @@ def moisture(int i)
     	note('warning', "${app.label}: Please check sensor ${settings."sensor${i}"}, it is currently reading 0%", 'a')
     }
 	
-	int daysA = state.daysAvailable				// avoid numerous hits to state.variables whenever possible
-	int minimum = cpd * dpw						// minimum change of 1 minute per cycls per scheduled days per week (note - can be 1*1=1)
-	if (minimum = 0) minimum = daysA			// don't let it get too small - at least 1 minute per day available
+	int daysA = state.daysAvailable
+	int minimum = cpd * dpw					// minimum of 1 minute per scheduled days per week (note - can be 1*1=1)
+	if (minimum < daysA) minimum = daysA	// but at least 1 minute per available day
 	int tpwAdjust = 0
 	
     if (diffHum > 0.01) { 								// only adjust tpw if more than 1% of target SP
   		tpwAdjust = Math.round(((tpw * diffHum) + 0.5) * dpw * cpd)	// Compute adjustment as a function of the current tpw
     	float adjFactor = 2.0 / daysA					// Limit adjustments to 200% per week - spread over available days
   		if (tpwAdjust > (tpw * adjFactor)) tpwAdjust = Math.round((tpw * adjFactor) + 0.5) 		// limit fast rise
-		if (tpwAdjust < minimum) tpwAdjust = minimum 	// but we need to move at least 1 minute per cycle per day to actually increase the watering time
+		if (tpwAdjust < minimum) tpwAdjust = minimum    // but we need to move at least 1 minute per cycle per day to actually increase the watering time
     } else if (diffHum < -0.01) {
     	if (diffHum < -0.05) diffHum = -0.05			// try not to over-compensate for a heavy rainstorm...
     	tpwAdjust = Math.round(((tpw * diffHum) - 0.5) * dpw * cpd)
-    	float adjFactor = -0.6667 / daysA				// Limit adjustments to 66% of tpwper week
-    	if (tpwAdjust < (tpw * adjFactor)) tpwAdjust = Math.round((tpw * adjFactor) - 0.5)	// limit slow decay
+    	float adjFactor = -0.6667 / daysA				// Limit adjustments to 66% per week
+    	if (tpwAdjust < (tpw * adjFactor)) tpwAdjust = Math.round((tpw * adjFactor) - 0.5)	// limit slow decay 
 		if (tpwAdjust > (-1 * minimum)) tpwAdjust = -1 * minimum // but we need to move at least 1 minute per cycle per day to actually increase the watering time
     }
     
-    
-    // Daily weather adjustments are allowed to be less than 1 minute per cycle per zone, so that small changes have less
-    // immediate impact than does the sensor-driven changes. However, the impact will accumulate as heat & humidity show
-    // consecutive days of increase or decrease.
     int seasonAdjust = 0
     if (isSeason) {
     	float sa = state.seasonAdj
@@ -1713,12 +1715,12 @@ def moisture(int i)
  	
  	// Now, adjust the tpw. 
  	// With seasonal adjustments enabled, tpw can go up or down independent of the difference in the sensor vs SP
-    int newTPW = tpw + tpwAdjust + seasonAdjust
+	int newTPW = tpw + tpwAdjust + seasonAdjust
     
     int perDay = 20
 	def perD = settings."perDay${i}"
     if (perD) perDay = perD.toInteger()
-    if (perDay = 0) perDay = daysA * cpd				// at least 1 minute per cycle per available day
+    if (perDay == 0) perDay = daysA * cpd				// at least 1 minute per cycle per available day
   	if (newTPW < perDay) newTPW = perDay				// make sure we have always have enough for 1 day of minimum water
   	
 	int adjusted = 0
@@ -1726,18 +1728,18 @@ def moisture(int i)
    		int maxTPW = daysA * 120	// arbitrary maximum of 2 hours per available watering day per week
    		if (newTPW > maxTPW) newTPW = maxTPW	// initDPW() below may spread this across more days		
    		if (newTPW > (maxTPW * 0.75)) note('warning', "${app.label}: Please check ${settings["sensor${i}"]}, Zone ${i} time per week seems high: ${newTPW} mins/week",'a')
-  		if (state.tpwMap[i-1] != newTPW) {	// are we changing the tpw?
+ 		if (state.tpwMap[i-1] != newTPW) {	// are we changing the tpw?
     		state.tpwMap[i-1] = newTPW
     		dpw = initDPW(i)							// need to recalculate days per week since tpw changed - initDPW() stores the value into dpwMap
-			adjusted = newTPW - tpw 	// so that the adjustment note is accurate
-  		}
+			adjusted = newTPW - tpw 	// so that the adjustment note is accurate  		
+ 		}
     }
     else if ((tpwAdjust + seasonAdjust) < 0) { 						// Needs less water
     	// Find the minimum tpw
     	minimum = cpd * daysA										// at least 1 minute per cycle per available day
 		int minLimit = 0
-		def minL = settings."minWeek${i}"							// unless otherwise specific in configuration
-		if (minL) minLimit = minL.toInteger()
+		def minL = settings."minWeek${i}"
+		if (minL) minLimit = minL.toInteger()						// unless otherwise specified in configuration
 		if (minLimit > 0) {
 			if (newTPW < minLimit) newTPW = minLimit				// use configured minutes per week as the minimum
 		} else if (newTPW < minimum) {
@@ -1871,7 +1873,10 @@ def sendIt(String msg) {
 //days available
 int daysAvailable(){
     int dayCount = 0
-	if (!settings.days) dayCount = 7
+    int daysA = state.daysAvailable
+	if (!settings.days || (daysA && (daysA == 7))) {
+		return 7		// every day is allowed
+	}
     else {    
 	    if (settings.days.contains('Even') || days.contains('Odd')) {
           dayCount = 4
@@ -1886,7 +1891,6 @@ int daysAvailable(){
         	if (settings.days.contains('Sunday')) 		dayCount += 1
         }
     }
-    int daysA = state.daysAvailable
     if (!daysA || (daysA != dayCount)) state.daysAvailable = dayCount
     return dayCount
 }    
@@ -1962,8 +1966,8 @@ int cycles(int i){
  
 //check if day is allowed
 boolean isDay() {    
-    if (!settings.days || (state.daysAvailable == 7)) return true		// every day is allowed
-    
+    if (!settings.days) return true		// every day is allowed
+     
     def daynow = new Date()
     
     String today = daynow.format('EEEE', location.timeZone)    
@@ -2146,6 +2150,7 @@ boolean isWeather(){
     		}
 		}
 		
+		// is the temp going up or down for the next few days?
 		float heatAdjust = 100.0
 		float avgHigh = highToday.toFloat()
 		if (highToday != 0) {
@@ -2184,7 +2189,7 @@ boolean isWeather(){
         		j++
         	}
         	if (highs > 1) avgHum = totalHum / highs
-        	humAdjust = 1.5-((0.5*avgHum)/humToday)	// basically, half of the delta % between today and today+3 days
+        	humAdjust = 1.5 - ((0.5 * avgHum) / humToday)	// basically, half of the delta % between today and today+3 days
         }
         if (isDebug) log.debug "humToday ${humToday}, avgHum ${avgHum}, humAdjust ${humAdjust}"
 
@@ -2197,7 +2202,7 @@ boolean isWeather(){
         //Note: these should never get to be very large, and work best if allowed to cumulate over time (watering amount will change marginally
         //		as days get warmer/cooler and drier/wetter)
         state.seasonAdj = ((heatAdjust + humAdjust) / 2) * 100.0        
-        weatherString += "\n Adjusting ${Math.round(state.seasonAdj - 100)}% for today"
+        weatherString += "\n Adjusting ${Math.round(state.seasonAdj - 100)}% for weather forecast"
         
         // Apply seasonal adjustment on Monday each week or at install
         if ((getWeekDay() == 1) || (state.weekseasonAdj == 0)) {
@@ -2231,7 +2236,7 @@ boolean isWeather(){
             	String plus = ''
             	if (wa != 0) {
             		if (wa > 0) plus = '+'
-            		weatherString += "\n Adjusting ${wa - 100.0}% for the week"
+            		weatherString += "\n Seasonal adjustment of ${wa - 100.0}% for the week"
             	}
             	setSeason()
             } else {
