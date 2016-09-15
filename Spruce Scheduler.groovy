@@ -1158,7 +1158,7 @@ boolean busy(){
 
 def busyOff(evt){
 	def status = switches.currentStatus
-	if ((switches.currentSwitch == 'off') && (status != 'pause') && (status != 'active')) { // double check that prior schedule is done
+	if ((switches.currentSwitch == 'off') && (status != 'pause')) { // double check that prior schedule is done
 		unsubscribe(switches)    						// we don't want any more button pushes until preCheck runs
 		Random rand = new Random() 						// just in case there are multiple schedules waiting on the same controller
 		int randomSeconds = rand.nextInt(49) + 10
@@ -1186,7 +1186,7 @@ def preCheck() {
 		runIn(45, checkRunMap)						// schedule checkRunMap() before doing weather check, gives isWeather 45s to complete
 													// because that seems to be a little more than the max that the ST platform allows
 
-        note('active', "${app.label}: Starting pre-check", 'i')
+        note('active', "${app.label}: Starting pre-check", 'd')
 
        	if (isWeather()) {							// set adjustments and check if we shold skip because of rain
        		resetEverything()						// if so, clean up our subscriptions
@@ -1469,7 +1469,7 @@ def syncOn(evt){
 	if ((settings.sync.currentSwitch == 'off') && (status != 'pause') && (status != 'active')) {
     	unsubscribe(settings.sync)
 		runIn(30, cycleOn)
-    	note('active', "${app.label}: ${settings.sync} finished, watering starts in 30 seconds", 'i')
+    	note('active', "${app.label}: ${settings.sync} finished, watering starts in 30 seconds", 'c')
 	} // else, it is just pausing...keep waiting for the next "off"
 }
 
@@ -1477,11 +1477,13 @@ def syncOn(evt){
 def waterStop(evt){
 	log.debug "waterStop: ${evt.displayName}"
 	
+	unschedule(cycleOn)			// in case we got stopped again before cycleOn starts from the restart
+	unsubscribe(switches)
+	subWaterStart()
+		
 	if (!state.pauseTime) {			// only need to do this for the first event if multiple contacts
 	    state.pauseTime = now()
-	    unsubscribe(switches)
-	    subWaterStart()
-
+	    
 		String cond = evt.value
 		switch (cond) {
 			case 'open':
@@ -1502,22 +1504,39 @@ def waterStop(evt){
 			default:
 				break
 		}
-		switches.programOff()		// stop the controller
-	    note('pause', "${app.label}: Watering paused - ${evt.displayName} ${cond}", 'c')
-	   	runIn(30, subOff)			// allow time for the above programOff() to complete...
+	    note('pause', "${app.label}: Watering paused - ${evt.displayName} ${cond}", 'c') // set to Paused
 	}
+	if (switches.currentSwitch != 'off') {
+		runIn(30, subOff)
+		switches.programOff()								// stop the water
+	}
+	else 
+		subscribe(switches, 'switch.off', cycleOff)
 }
 
+// This is a hack to work around the delay in response from the controller to the above programOff command...
+// We frequently see the off notification coming a long time after the command is issued, so we try to catch that so that
+// we don't prematurely exit the cycle.
 def subOff() {
+	subscribe(switches, 'switch.off', offPauseCheck)
+}
+
+def offPauseCheck( evt ) {
+	unsubscribe(switches)
 	subscribe(switches, 'switch.off', cycleOff)
+	if ((switches.currentSwitch != off) && (switches.CurrentStatus != 'pause')) { // eat the first off while paused
+		cycleOff(evt)
+	} 
 }
 
 // handle end of pause session     
 def waterStart(evt){
 	if (!isWaterStopped()){ 					// only if ALL of the selected contacts are not open
-	
-		runIn(contactDelay * 60, cycleOn)		// start the water (or do we call resume directly?)
-	
+		runIn(contactDelay * 60, cycleOn)
+		
+		unsubscribe(switches)
+		subWaterStop()							// allow stopping again while we wait for cycleOn to start
+		
 		log.debug "waterStart(): enabling device is ${evt.device} ${evt.value}"
 		
 		String cond = evt.value
@@ -1543,7 +1562,7 @@ def waterStart(evt){
 		// let cycleOn() change the status to Active - keep us paused until then
 		String s = ''
 		if (settings.contactDelay > 1) s = 's'
-   		note('pause', "${app.label}: ${evt.displayName} ${cond}, watering resumes in ${contactDelay} minute${s}", 'i')  
+   		note('pause', "${app.label}: ${evt.displayName} ${cond}, watering resumes in ${contactDelay} minute${s}", 'c')  
 	} else {
 		log.debug "waterStart(): one down - ${evt.displayName}"
 	}
@@ -1812,7 +1831,6 @@ def note(String statStr, String msg, String msgType) {
   			case 'c':
   				if (settings.notify.contains('Delays')) {
       				sendIt(msg)
-      				notifyController = false					// no need to notify controller unless we don't notify the user
       			}
       			break
       		case 'i':
