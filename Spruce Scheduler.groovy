@@ -157,6 +157,7 @@ def globalPage() {
                 input(name: 'notify', type: 'enum', title: 'Select what push notifications to receive.', required: false, 
                 	multiple: true, metadata: [values: ['Daily', 'Weekly', 'Delays', 'Warnings', 'Weather', 'Moisture', 'Events']])
                 input('recipients', 'contact', title: 'Send push notifications to', required: false, multiple: true)
+                input(name: 'logAll', type: 'bool', title: 'Log all notices to Hello Home?', defaultValue: 'false', options: ['true', 'false'])
         } 
     }
 }
@@ -1110,9 +1111,9 @@ def manualStart(evt){
                 int mins = tt - (hours * 60)
                 String hourString = ''
                 if (hours > 0) hourString = "${hours} hours &"
-                newString = "Run time: ${hourString} ${mins} minutes:\n"
+                newString = "run time: ${hourString} ${mins} minutes:\n"
             }
-            runNowMap = "${app.label}:\nManual run, watering in 1 minute:\n" + newString + runNowMap
+            runNowMap = "${app.label}:\nManual run, watering in 1 minute: " + newString + runNowMap
             note('active', runNowMap, 'd')                      
         }
         else {
@@ -1230,14 +1231,14 @@ def cycleOn(){
             resume()
             
             // send the notification AFTER we start the controller (in case we run over our execution time limit)
-            String newString = ''
+            String newString = "${app.label}: Starting"
             if (!state.startTime) {
             	state.startTime = now()				// if we haven't already started
             	if (atomicState.finishTime) atomicState.finishTime = null		// so recovery in busy() knows we didn't finith 
             	if (state.pauseTime) state.pauseTime = null
             	if (state.totalTime) {
                 	String finishTime = new Date(now() + (60000 * state.totalTime).toLong()).format('EEEE @ h:mm a', location.timeZone)
-                	newString = ' - ETC: ' + finishTime
+                	newString = '${app.label}: Starting - ETC: ' + finishTime
             	}
             } 
             else if (state.pauseTime) {		// resuming after a pause
@@ -1247,9 +1248,9 @@ def cycleOn(){
 				state.totalTime = tt		// keep track of the pauses, and the 1 minute delay above
     			String finishTime = new Date(state.startTime + (60000 * tt).toLong()).format('EEEE @ h:mm a', location.timeZone) 
     			state.pauseTime = null
-    			newString = ' - New ETC: ' + finishTime
+    			newString = '${app.label}: Resuming - New ETC: ' + finishTime
             }
-            note('active', "${app.label}: Resuming" + newString, 'd')
+            note('active', newString, 'd')
         }
         else {
             // Ready to run, but one of the control contacts is still open, so we wait
@@ -1315,9 +1316,9 @@ def checkRunMap(){
                 int mins = tt - (hours * 60)
                 String hourString = ''
                 if (hours > 0) hourString = "${hours} hours &"
-                newString = "Run time: ${hourString} ${mins} minutes:\n"
+                newString = "run time: ${hourString} ${mins} minutes:\n"
             }
-            runNowMap = "${app.label}: Watering begins in 1 minute,\n" + newString + runNowMap
+            runNowMap = "${app.label}: Watering begins in 1 minute, " + newString + runNowMap
             note('active', runNowMap, 'd')
         }
         else {
@@ -1826,47 +1827,66 @@ def note(String statStr, String msg, String msgType) {
 
 	// notify user second (small cost)
 	boolean notifyController = true
-    if(settings.notify) {
+    if(settings.notify || settings.logAll) {
+    	String spruceMsg = 'Spruce ' + msg
     	switch(msgType) {
     		case 'd':
-      			if (settings.notify.contains('Daily')) {		// always log the daily events to the controller
-      				sendIt(msg)
+      			if (settings.notify && settings.notify.contains('Daily')) {		// always log the daily events to the controller
+      				sendIt(spruceMsg)
+      			}
+      			else if (settings.logAll) {
+      				sendNotificationEvent(spruceMsg)
       			}
       			break
       		case 'w':
       			notifyController = false						// dont bother with the weekly report
-      			if (settings.notify.contains('Weekly')) {
-      				sendIt(msg)
+      			if (settings.notify && settings.notify.contains('Weekly')) {
+      				sendIt(spruceMsg)
+      			}
+      			else if (settings.logAll) {
+      				sendNotificationEvent(spruceMsg)
       			}
       			break
   			case 'c':
-  				if (settings.notify.contains('Delays')) {
-      				sendIt(msg)
+  				if (settings.notify && settings.notify.contains('Delays')) {
+      				sendIt(spruceMsg)
+      			}
+      			else if (settings.logAll) {
+      				sendNotificationEvent(spruceMsg)
       			}
       			break
       		case 'i':
-      			if (settings.notify.contains('Events')) {
-      				sendIt(msg)
+      			if (settings.notify && settings.notify.contains('Events')) {
+      				sendIt(spruceMsg)
       				notifyController = false					// no need to notify controller unless we don't notify the user
-      			} 
+      			}
+      			else if (settings.logAll) {
+      				sendNotificationEvent(spruceMsg)
+      			}
       			break
   			case 'f':
   				notifyController = false						// no need to notify the controller, ever
-				if (settings.notify.contains('Weather')) {
-      				sendIt(msg)
+				if (settings.notify && settings.notify.contains('Weather')) {
+      				sendIt(spruceMsg)
+      			}
+      			else if (settings.logAll) {
+      				sendNotificationEvent(spruceMsg)
       			}
       			break
       		case 'a':
       			notifyController = false						// no need to notify the controller, ever
-      			if (settings.notify.contains('Warnings')) {
-      				sendIt(msg)
+      			if (settings.notify && settings.notify.contains('Warnings')) {
+      				sendIt(spruceMsg)
       			} else
-      				sendNotificationEvent(msg)					// Special case - make sure this goes into the Hello Home log, if not notifying
+      				sendNotificationEvent(spruceMsg)					// Special case - make sure this goes into the Hello Home log, if not notifying
       			break
       		case 'm':
-      			if (settings.notify.contains('Moisture')) {
-      				sendIt(msg)
+      			if (settings.notify && settings.notify.contains('Moisture')) {
+      				sendIt(spruceMsg)
       				notifyController = false					// no need to notify controller unless we don't notify the user
+      			}
+      			else if (settings.logAll) {
+      				sendNotificationEvent(spruceMsg)
       			}
       			break
       		default:
