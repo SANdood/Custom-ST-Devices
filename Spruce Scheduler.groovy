@@ -1137,6 +1137,16 @@ boolean busy(){
     	}
     }
     
+    // Moved from cycleOn() - don't even start pre-check until the other controller completes its cycle
+    if (settings.sync) {
+		if ((settings.sync.currentSwitch != 'off') || settings.sync.currentStatus == 'pause') {
+            subscribe(settings.sync, 'switch.off', syncOn)
+            //if (!state.startTime && state.pauseTime) state.pauseTime = null		// haven't started yet
+            note('active', "${app.label}: Waiting for ${sync} to complete before starting", 'd')
+            return true
+        }
+    }
+    
     // Check that the controller isn't running some other schedule
     if ((switches.currentSwitch == 'off') && (switches.currentStatus != 'pause')) {
 		//log.debug "switches ${switches.currentSwitch}, status ${switches.currentStatus}"
@@ -1202,14 +1212,15 @@ def preCheck() {
 //start water program
 def cycleOn(){       
 	if (atomicState.run) {							//block if manually stopped during precheck which goes to cycleOff
-        if (sync) {
-			if ((sync.currentSwitch != 'off') || sync.currentStatus == 'pause') {
-                subscribe(sync, 'switch.off', syncOn)
-                if (!state.startTime && state.pauseTime) state.pauseTime = null		// haven't started yet
-                note('pause', "${app.label}: Waiting for ${sync} to complete before starting", 'w')
-                return
-            }
-        }
+// Moved to busy()
+//        if (sync) {
+//			if ((sync.currentSwitch != 'off') || sync.currentStatus == 'pause') {
+//                subscribe(sync, 'switch.off', syncOn)
+//                if (!state.startTime && state.pauseTime) state.pauseTime = null		// haven't started yet
+//                note('pause', "${app.label}: Waiting for ${sync} to complete before starting", 'w')
+//                return
+//            }
+//        }
 
         // master schedule complete (or null), check the control contacts
         if (!isWaterStopped()) {		// make sure ALL the contacts and toggles aren't paused
@@ -1465,11 +1476,11 @@ def resume(){
 
 def syncOn(evt){
 	// double check that the switch is actually finished and not just paused
-	def status = settings.sync.currentStatus
-	if ((settings.sync.currentSwitch == 'off') && (status != 'pause') && (status != 'active')) {
+	if ((settings.sync.currentSwitch == 'off') && (settings.sync.currentStatus != 'pause')) {
     	unsubscribe(settings.sync)
-		runIn(30, cycleOn)
-    	note('active', "${app.label}: ${settings.sync} finished, watering starts in 30 seconds", 'c')
+    	note('active', "${app.label}: ${settings.sync} finished, starting pre-check" /* in 15 seconds" */, 'i')
+    	//runIn(15, preCheck)
+    	preCheck()
 	} // else, it is just pausing...keep waiting for the next "off"
 }
 
