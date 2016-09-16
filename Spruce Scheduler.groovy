@@ -284,17 +284,18 @@ private String syncString(){
 private String notifyString(){
 	String notifyStr = ''
 	if(settings.notify) {
-      if (settings.notify.contains('Daily')) 	notifyStr += ' Daily'
-      if (settings.notify.contains('Weekly')) 	notifyStr += ' Weekly'
-      if (settings.notify.contains('Delays')) 	notifyStr += ' Delays'
-      if (settings.notify.contains('Warnings')) notifyStr += ' Warnings'
-      if (settings.notify.contains('Weather')) 	notifyStr += ' Weather'
-      if (settings.notify.contains('Moisture')) notifyStr += ' Moisture'
-      if (settings.notify.contains('Events')) 	notifyStr += ' Events'
-   }
-   if(notifyStr == '')
-   	  notifyStr = ' None'
-   return notifyStr
+      	if (settings.notify.contains('Daily')) 		notifyStr += ' Daily'
+      	if (settings.notify.contains('Weekly')) 	notifyStr += ' Weekly'
+      	if (settings.notify.contains('Delays')) 	notifyStr += ' Delays'
+      	if (settings.notify.contains('Warnings')) 	notifyStr += ' Warnings'
+      	if (settings.notify.contains('Weather')) 	notifyStr += ' Weather'
+      	if (settings.notify.contains('Moisture')) 	notifyStr += ' Moisture'
+      	if (settings.notify.contains('Events')) 	notifyStr += ' Events'
+   	}
+   	if (notifyStr == '')	notifyStr = ' None'
+   	if (settings.logAll) notifyStr += '\nLogging all notices to Hello Home'
+ 
+   	return notifyStr
 }
 
 private String daysString(){
@@ -868,13 +869,14 @@ def updated() {
 def installSchedule(){
 	if (!state.seasonAdj) 		state.seasonAdj = 100.0
     if (!state.weekseasonAdj) 	state.weekseasonAdj = 0
-    if (!state.daysAvailable) 	state.daysAvailable = 7		// just to be sure that it is initialized
+    if (state.daysAvailable != 0) state.daysAvailable = 0	// force daysAvailable to be initialized by daysAvailable()
+    state.daysAvailable = daysAvailable()					// every time we save the schedule	
     
     subscribe(app, appTouch)								// enable the "play" button for this schedule
     
     if (atomicState.run) {
     	boolean running = attemptRecovery()  
-    		//{							// looks like we're note actually running
+    		//{							// looks like we're not actually running
 			// this is a risky move, but it's not a valid state, so let's clean it up
 			// if ((switches.currentSwitch == 'programWait') && (switches.currentStatus == 'active')) {
 			// switches.programOff()
@@ -1281,7 +1283,7 @@ def cycleOff(evt){
 def checkRunMap(){
 
     // Create weekly water summary, if requested, on Tuesday
-    if(settings.notify && settings.notify.contains('Weekly') && (getWeekDay() == 3))
+    if ((settings.logAll || (settings.notify && settings.notify.contains('Weekly'))) && (getWeekDay() == 3))
     {
     	int zone = 1
         String zoneSummary = ''
@@ -1597,9 +1599,8 @@ int initDPW(int zone){
 		// 3 days per week not allowed for even or odd day selection
 	    if(dpw == 3 && days && (days.contains('Even') || days.contains('Odd')) && !(days.contains('Even') && days.contains('Odd')))
 			if((tpw.toFloat() / perDay) < 3.0) dpw = 2 else dpw = 4
-		int daycheck
-		if (state.daysAvailable) daycheck = state.daysAvailable else daycheck = daysAvailable()
-    	if(daycheck < dpw) dpw = daycheck
+		int daycheck = daysAvailable()						// initialize & optimize daysAvailable
+    	if (daycheck < dpw) dpw = daycheck
     }
 	state.dpwMap[zone-1] = dpw
     return dpw
@@ -1921,26 +1922,34 @@ def sendIt(String msg) {
 
 //days available
 int daysAvailable(){
-    int dayCount = 0
+
+	// Calculate days available for watering and save in state variable for future use
     int daysA = state.daysAvailable
-	if (!settings.days || (daysA && (daysA == 7))) {
+	if (daysA && (daysA > 0)) {							// state.daysAvailable has already calculated and stored in state.daysAvailable
+		return daysA
+	}
+	
+	if (!settings.days)	{								// settings.days = "" --> every day is available
+		state.daysAvailable = 7 
 		return 7		// every day is allowed
 	}
-    else {    
-	    if (settings.days.contains('Even') || days.contains('Odd')) {
-          dayCount = 4
-          if(settings.days.contains('Even') && days.contains('Odd')) dayCount = 7
-        } else {
-        	if (settings.days.contains('Monday')) 		dayCount += 1
-        	if (settings.days.contains('Tuesday')) 		dayCount += 1
-        	if (settings.days.contains('Wednesday'))	dayCount += 1
-        	if (settings.days.contains('Thursday')) 	dayCount += 1
-        	if (settings.days.contains('Friday')) 		dayCount += 1
-        	if (settings.days.contains('Saturday')) 	dayCount += 1
-        	if (settings.days.contains('Sunday')) 		dayCount += 1
-        }
+	
+	int dayCount = 0									// settings.days specified, need to calculate state.davsAvailable (once)
+	if (settings.days.contains('Even') || days.contains('Odd')) {
+        dayCount = 4
+        if(settings.days.contains('Even') && days.contains('Odd')) dayCount = 7
+    } 
+    else {
+        if (settings.days.contains('Monday')) 		dayCount += 1
+        if (settings.days.contains('Tuesday')) 		dayCount += 1
+        if (settings.days.contains('Wednesday'))	dayCount += 1
+        if (settings.days.contains('Thursday')) 	dayCount += 1
+        if (settings.days.contains('Friday')) 		dayCount += 1
+        if (settings.days.contains('Saturday')) 	dayCount += 1
+        if (settings.days.contains('Sunday')) 		dayCount += 1
     }
-    if (!daysA || (daysA != dayCount)) state.daysAvailable = dayCount
+    
+    state.daysAvailable = dayCount
     return dayCount
 }    
  
@@ -2014,11 +2023,11 @@ int cycles(int i){
 }
  
 //check if day is allowed
-boolean isDay() {    
-    if (!settings.days) return true		// every day is allowed
+boolean isDay() {
+	
+	if (daysAvailable() == 7) return true						// every day is allowed
      
     def daynow = new Date()
-    
     String today = daynow.format('EEEE', location.timeZone)    
     if (settings.days.contains(today)) return true
 
@@ -2089,7 +2098,7 @@ boolean isWeather(){
    	if (isDebug) log.debug "isWeather(): ${wzipcode}"   
 
 	// get only the data we need
-	// Move geolookup to installSchedule()
+	// Moved geolookup to installSchedule()
 	String featureString = 'forecast/conditions'
 	if (isSeason) featureString += '/astronomy'
 	startMsecs= now()
