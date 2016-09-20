@@ -243,7 +243,8 @@ private String waterStoppersString(){
 			i++
 		}
 		stoppers += "\nPause: When ${contactStop}\n"
-	} else {
+	} 
+	else {
 		stoppers += ': None\n'
 	}
 	stoppers += "Switch"
@@ -257,7 +258,8 @@ private String waterStoppersString(){
 			i++
 		}
 		stoppers += "\nPause: When switched ${toggleStop}\n"
-	} else {
+	} 
+	else {
 		stoppers += ': None\n'
 	}
 	int cd = 1
@@ -304,7 +306,8 @@ private String daysString(){
     	if(days.contains('Even') || days.contains('Odd')) {
         	if (days.contains('Even')) 		daysString += ' Even'
       		if (days.contains('Odd')) 		daysString += ' Odd'
-        } else {
+        } 
+        else {
             if (days.contains('Monday')) 	daysString += ' M'
         	if (days.contains('Tuesday')) 	daysString += ' Tu'
         	if (days.contains('Wednesday')) daysString += ' W'
@@ -733,7 +736,8 @@ private String getaZoneSummary(int zone){
     	if (dpw == 2) daysString = 'Every 4 days'
     	if (dpw == 4) daysString = 'Every 2 days'
     	if (days.contains('Even') && days.contains('Odd')) daysString = 'any day'
-  	} else {
+  	} 
+  	else {
     	def int[] dpwMap = [0,0,0,0,0,0,0]
      	dpwMap = getDPWDays(dpw)
      	daysString += getRunDays(dpwMap)
@@ -1074,23 +1078,14 @@ int getWeekDay(day)
 private String getRunDays(day1,day2,day3,day4,day5,day6,day7)
 {
     String str = ''
-
-    if(day1)
-    	str += 'M'
-    if(day2)
-    	str += 'T'
-    if(day3)
-    	str += 'W'
-    if(day4)
-    	str += 'Th'
-    if(day5)
-    	str += 'F'
-    if(day6)
-    	str += 'Sa'
-    if(day7)
-    	str += 'Su'
-    if(string == '')
-    	str = '0 Days/week'
+    if(day1) str += 'M'
+    if(day2) str += 'T'
+    if(day3) str += 'W'
+    if(day4) str += 'Th'
+    if(day5) str += 'F'
+    if(day6) str += 'Sa'
+    if(day7) str += 'Su'
+    if(str == '') str = '0 Days/week'
     return str
 }
 
@@ -1120,9 +1115,9 @@ def manualStart(evt){
                 if (hours > 0) hourString = "${hours} hour${s} & "
                 s = 's'
                 if (mins == 1) s = ''
-                newString = "run time: ${hourString}${mins} minute${s}:\r\n"
+                newString = "run time: ${hourString}${mins} minute${s}:\n"
             }
-            note('active', "${app.label}:\r\nManual run, watering in 1 minute: " + newString + runNowMap, 'd')                      
+            note('active', "${app.label}:\nManual run, watering in 1 minute: " + newString + runNowMap, 'd')                      
         }
         else {
         	note('skipping', "${app.label}: Manual run failed, check configuration", 'a')
@@ -1296,7 +1291,8 @@ def cycleOff(evt){
     	atomicState.finishTime = ft									// this is important to reset the schedule after failures in busy()
     	String finishTime = ft.format('h:mm a', location.timeZone)
     	note('finished', "${app.label}: Finished watering at ${finishTime}", 'd')
-    } else {
+    } 
+    else {
     	log.debug "${switches} turned off"		// is this a manual off? perhaps we should send a note?
     }
 	resetEverything()
@@ -1316,7 +1312,7 @@ def checkRunMap(){
             zone++
         }
         // note() does the log.debug
-        note('season', "${app.label}: Weekly water summary:\r\n${zoneSummary}", 'w' )
+        note('season', "${app.label}: Weekly water summary:\n${zoneSummary}", 'w' )
     }    
     
 	//check if isWeather returned true or false before checking
@@ -1345,7 +1341,7 @@ def checkRunMap(){
                 if (hours > 0) hourString = "${hours} hour${s} & "
                 s = 's'
                 if (mins == 1) s = ''
-                newString = "run time: ${hourString}${mins} minute${s}:\r\n"
+                newString = "run time: ${hourString}${mins} minute${s}:\n"
             }
             note('active', "${app.label}: Watering begins in 1 minute, " + newString + runNowMap, 'd')
         }
@@ -1357,7 +1353,8 @@ def checkRunMap(){
             note('skipping', "${app.label}: No watering today", 'd')
             if (atomicState.run) atomicState.run = false 		// do this last, so that the above note gets sent to the controller
         }
-    } else {
+    } 
+    else {
     	log.debug "checkRunMap(): atomicState.run = false"  	// isWeather cancelled us out before we got started
     }
 }
@@ -1403,7 +1400,8 @@ def cycleLoop(int i)
             		int dayint = Integer.parseInt(daynum)
         			if(days.contains('Odd') && (((dayint +1) % Math.round(31 / (dpw * 4))) == 0)) runToday = 1
           			else if(days.contains('Even') && ((dayint % Math.round(31 / (dpw * 4))) == 0)) runToday = 1
-          		} else {
+          		} 
+          		else {
             		int weekDay = getWeekDay()-1
             		def dpwMap = getDPWDays(dpw)
             		runToday = dpwMap[weekDay]  //1 or 0
@@ -1433,17 +1431,18 @@ def cycleLoop(int i)
                 		//float sa = state.seasonAdj
                 		// if (sa == 0) { sa = 100.0; state.seasonAdj = 100.0 }
                 		rtime = Math.round(((rtime / cyc) * (state.seasonAdj / 100.0)) + 0.5)
-                	} else {
+                	} 
+                	else {
                 		rtime = Math.round((rtime / cyc) + 0.5)	// let moisture handle the seasonAdjust for learn zones.    
                 	}
 					totalCycles += cyc
 					totalTime += (rtime * cyc)
-                	runNowMap += "${settings."name${zone}"}: ${cyc} x ${rtime} min\r\n"
+                	runNowMap += "${settings."name${zone}"}: ${cyc} x ${rtime} min\n"
                 	if (isDebug) log.debug "Zone ${zone} Map: ${cyc} x ${rtime} min - totalTime: ${totalTime}"
             	}
         	}
 		}
-        if (nozzle(zone) == 4) pumpMap += "${settings."name${zone}"}: ${settings."zone${zone}"} on\r\n"
+        if (nozzle(zone) == 4) pumpMap += "${settings."name${zone}"}: ${settings."zone${zone}"} on\n"
         timeMap."${zone+1}" = "${rtime}"
         zone++  
     }
@@ -1456,9 +1455,9 @@ def cycleLoop(int i)
     		float sadj = sa - 100.0
     		if (sadj > 0.0) plus = '+'											//display once in cycleLoop()
     		int iadj = Math.round(sadj)
-    		if (iadj != 0) seasonStr = "(Adjusting ${plus}${iadj}% for weather forecast)\r\n"
+    		if (iadj != 0) seasonStr = "(Adjusting ${plus}${iadj}% for weather forecast)\n"
     	}
-        note('moisture', "${app.label} Sensor status:\r\n" + seasonStr + soilString,'m')
+        note('moisture', "${app.label} Sensor status:\n" + seasonStr + soilString,'m')
     }
 
     if (!runNowMap) {
@@ -1605,7 +1604,8 @@ def waterStart(evt){
 		String s = ''
 		if (settings.contactDelay > 1) s = 's'
    		note('pause', "${app.label}: ${evt.displayName} ${cond}, watering resumes in ${contactDelay} minute${s}", 'c')  
-	} else {
+	} 
+	else {
 		log.debug "waterStart(): one down - ${evt.displayName}"
 	}
 }
@@ -1724,10 +1724,11 @@ def moisture(int i)
         // in Delay mode, only looks at target moisture level, doesn't try to adjust tpw
 		if(latestHum <= spHum.toFloat()) {
            //dry soil
-           	return [1,"${settings."name${i}"}, Watering: ${settings."sensor${i}"} reads ${latestHum}%, SP is ${spHum}%\r\n"]              
-        } else {
+           	return [1,"${settings."name${i}"}, Watering: ${settings."sensor${i}"} reads ${latestHum}%, SP is ${spHum}%\n"]              
+        } 
+        else {
         	//wet soil
-           	return [0,"${settings."name${i}"}, Skipping: ${settings."sensor${i}"} reads ${latestHum}%, SP is ${spHum}%\r\n"]           
+           	return [0,"${settings."name${i}"}, Skipping: ${settings."sensor${i}"} reads ${latestHum}%, SP is ${spHum}%\n"]           
         }
     }
 
@@ -1826,10 +1827,11 @@ def moisture(int i)
     if (adjusted != 0) adjStr = ", ${plus}${adjusted} min"
     if (Math.abs(adjusted) > 1) adjStr += 's'
     if (diffHum >= 0.0) { 				// water only if ground is drier than SP
-    	moistureSum = "> ${settings."name${i}"}, Water: ${settings."sensor${i}"} @ ${latestHum}% (${spHum}%)${adjStr} (${newTPW} min/wk)\r\n"
+    	moistureSum = "> ${settings."name${i}"}, Water: ${settings."sensor${i}"} @ ${latestHum}% (${spHum}%)${adjStr} (${newTPW} min/wk)\n"
         return [1, moistureSum]
-    } else { 							// not watering
-        moistureSum = "> ${settings."name${i}"}, Skip: ${settings."sensor${i}"} @ ${latestHum}% (${spHum}%)${adjStr} (${newTPW} min/wk)\r\n"
+    } 
+    else { 							// not watering
+        moistureSum = "> ${settings."name${i}"}, Skip: ${settings."sensor${i}"} @ ${latestHum}% (${spHum}%)${adjStr} (${newTPW} min/wk)\n"
     	return [0, moistureSum]
     }
     return [0, moistureSum]
@@ -2099,11 +2101,13 @@ def getRainToday() {
     if (!wdata) {
     	// log.debug "getRainTotal ${zipString()} error: wdata is null"  // note() does the log.debug now
     	note('warning', "${app.label}: Please check Zipcode setting, error: null", 'a')
-    } else {
+    } 
+    else {
 		if (!wdata.response || wdata.response.containsKey('error')) {
 			log.debug wdata.response
-   			note('warning', "${app.label}: Please check Zipcode setting, error:\r\n${wdata.response.error.type}: ${wdata.response.error.description}" , 'a')
-		} else {
+   			note('warning', "${app.label}: Please check Zipcode setting, error:\n${wdata.response.error.type}: ${wdata.response.error.description}" , 'a')
+		} 
+		else {
 			float TRain = 0.0
 			if (wdata.current_observation.precip_today_in.isNumber()) { // WU can return "t" for "Trace" - we'll assume that means 0.0
             	TRain = wdata.current_observation.precip_today_in.toFloat()
@@ -2142,14 +2146,16 @@ boolean isWeather(){
     	if (isDebug) log.debug wdata.response
 		if (wdata.response.containsKey('error')) {
         	if (wdata.response.error.type != 'invalidfeature') {
-    			note('warning', "${app.label}: Please check Zipcode setting, error:\r\n${wdata.response.error.type}: ${wdata.response.error.description}" , 'a')
+    			note('warning', "${app.label}: Please check Zipcode setting, error:\n${wdata.response.error.type}: ${wdata.response.error.description}" , 'a')
         		return false
-            } else {
+            } 
+            else {
             	// Will find out which one(s) weren't reported later (probably never happens now that we don't ask for history)
             	log.debug 'Rate limited...one or more WU features unavailable at this time.'
             }
 		}
-    } else {
+    } 
+    else {
     	if (isDebug) log.debug 'wdata is null'
     	note('warning', "${app.label}: Please check Zipcode setting, error: null" , 'a')
     	return false
@@ -2227,10 +2233,10 @@ boolean isWeather(){
    	if (wdata.forecast.simpleforecast.forecastday[0].high.fahrenheit.isNumber()) highToday = wdata.forecast.simpleforecast.forecastday[0].high.fahrenheit.toInteger()
    	if (wdata.forecast.simpleforecast.forecastday[1].high.fahrenheit.isNumber()) highTom = wdata.forecast.simpleforecast.forecastday[1].high.fahrenheit.toInteger()
    	
-    String weatherString = "${app.label}: ${city} weather:\r\n TDA: ${highToday}F"
+    String weatherString = "${app.label}: ${city} weather:\n TDA: ${highToday}F"
     if (isRain) weatherString += ", ${qpfTodayIn}in rain (${Math.round(popToday)}% PoP)"
-    weatherString += "\r\n TMW: ${highTom}F"
-    if (isRain) weatherString += ", ${qpfTomIn}in rain (${Math.round(popTom)}% PoP)\r\n YDA: ${YRain}in rain"
+    weatherString += "\n TMW: ${highTom}F"
+    if (isRain) weatherString += ", ${qpfTomIn}in rain (${Math.round(popTom)}% PoP)\n YDA: ${YRain}in rain"
     
     if (isSeason)
     {   
@@ -2292,8 +2298,12 @@ boolean isWeather(){
         //
         //Note: these should never get to be very large, and work best if allowed to cumulate over time (watering amount will change marginally
         //		as days get warmer/cooler and drier/wetter)
-        state.seasonAdj = ((heatAdjust + humAdjust) / 2) * 100.0        
-        weatherString += "\r\n Adjusting ${Math.round(state.seasonAdj - 100)}% for weather forecast"
+       	def sa = ((heatAdjust + humAdjust) / 2) * 100.0
+       	state.seasonAdj = sa
+       	sa = sa - 100.0 
+        String plus = ''
+        if (sa > 0) plus = '+'
+        weatherString += "\n Adjusting ${plus}${Math.round(sa)}% for weather forecast"
         
         // Apply seasonal adjustment on Monday each week or at install
         if ((getWeekDay() == 1) || (state.weekseasonAdj == 0)) {
@@ -2324,14 +2334,15 @@ boolean isWeather(){
 				state.weekseasonAdj = wa
 				
             	//apply seasonal time adjustment
-            	String plus = ''
+            	plus = ''
             	if (wa != 0) {
             		if (wa > 100.0) plus = '+'
             		String waStr = String.format('%.2f', (wa - 100.0))
-            		weatherString += "\r\n Seasonal adjustment of ${waStr}% for the week"
+            		weatherString += "\n Seasonal adjustment of ${waStr}% for the week"
             	}
             	setSeason()
-            } else {
+            } 
+            else {
             	log.debug 'isWeather(): Unable to get sunrise/set info for today.'
             }
         }
@@ -2367,7 +2378,8 @@ boolean isWeather(){
     	    note('rainy', "${app.label}: skipping, ${rainStr}in weighted average rain over the past week", 'd')
         	return true
     	}
-    } else { // we have at least one sensor in the schedule
+    } 
+    else { // we have at least one sensor in the schedule
     	// Ignore rain sensor & historical rain - only skip if more than setrainDelay is expected before midnight tomorrow
     	float popRain = (qpfTodayIn * (popToday / 100.0)) - TRain	// ignore rain that has already fallen so far today - sensors should already reflect that
     	if (popRain > setrainDelay){
