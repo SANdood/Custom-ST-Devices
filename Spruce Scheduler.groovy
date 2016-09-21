@@ -1,5 +1,5 @@
 /**
- *  Spruce Scheduler Pre-release V2.52.7 - Updated 9/13/2016, BAB
+ *  Spruce Scheduler Pre-release V2.52.8 - Updated 9/20/2016, BAB
  *
  *	
  *  Copyright 2015 Plaid Systems
