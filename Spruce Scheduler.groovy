@@ -885,12 +885,14 @@ def installSchedule(){
     long randomOffset = 0
     
     // always collect rainfall
-    int randomSeconds = rand.nextInt(59)
+    int randomSeconds = rand.nextInt(60) + 2
     schedule("${randomSeconds} 57 23 1/1 * ? *", getRainToday)		// capture today's rainfall just before midnight
 
     if (switches && startTime && enable){
-    	randomOffset = (rand.nextInt(60) + 20) * 1000
+    	//randomOffset = (rand.nextInt(60) + 20) * 1000
+    	randomOffset = rand.nextInt(60000) + 20000
         def checktime = timeToday(startTime, location.timeZone).getTime() + randomOffset
+        log.debug "randomOffset ${randomOffset} checktime ${checktime}"
     	schedule(checktime, preCheck)	//check weather & Days
         writeSettings()
         note('schedule', "${app.label}: Starts at ${startTimeString()}", 'i')
@@ -1176,8 +1178,8 @@ boolean busy(){
     //		programWait & !active 
     if (isDay()) {											// Yup, we need to run today, so wait for the other schedule to finish
     	log.debug "switches ${csw}, status ${cst} (3rd)"
-    	subscribe(switches, 'switch.off', busyOff)
     	resetEverything()
+    	subscribe(switches, 'switch.off', busyOff)
     	note('active', "${app.label}: Another schedule running, waiting to start (busy)", 'c')
        	return true
     }
@@ -1193,7 +1195,7 @@ def busyOff(evt){
 	if ((switches.currentSwitch == 'off') && (cst != 'pause')) { // double check that prior schedule is done
 		unsubscribe(switches)    						// we don't want any more button pushes until preCheck runs
 		Random rand = new Random() 						// just in case there are multiple schedules waiting on the same controller
-		int randomSeconds = rand.nextInt(49) + 10
+		int randomSeconds = rand.nextInt(120) + 15
     	runIn(randomSeconds, preCheck)					// no message so we don't clog the system
     	note('active', "${app.label}: ${switches} finished, starting pre-check in ${randomSeconds} seconds (busyOff)", 'i')
 	}
@@ -1215,9 +1217,12 @@ def preCheck() {
 		switches.programWait()						// take over the controller so other schedules don't mess with us
 		runIn(45, checkRunMap)						// schedule checkRunMap() before doing weather check, gives isWeather 45s to complete
 													// because that seems to be a little more than the max that the ST platform allows
+		def start = now()
+		note('active', "${app.label}: Starting pre-check", 'd')  //
+		def end = now()
+		log.debug "preCheck note active ${end - start}ms"
 		unsubAllBut()								// unsubscribe to everything except appTouch()
 		subscribe(switches, 'switch.off', cycleOff)	// and start setting up for today's cycle
-		note('active', "${app.label}: Starting pre-check", 'd')  //
 		
        	if (isWeather()) {							// set adjustments and check if we shold skip because of rain
        		resetEverything()						// if so, clean up our subscriptions
@@ -1508,7 +1513,7 @@ def syncOn(evt){
 	if ((settings.sync.currentSwitch == 'off') && (settings.sync.currentStatus != 'pause')) {
     	resetEverything()								// back to our known state
     	Random rand = new Random() 						// just in case there are multiple schedules waiting on the same controller
-		int randomSeconds = rand.nextInt(49) + 10
+		int randomSeconds = rand.nextInt(120) + 15
     	runIn(randomSeconds, preCheck)					// no message so we don't clog the system
     	note('schedule', "${app.label}: ${settings.sync} finished, starting pre-check in ${randomSeconds} seconds (syncOn)", 'c')
 	} // else, it is just pausing...keep waiting for the next "off"
@@ -1928,20 +1933,19 @@ def note(String statStr, String msg, String msgType) {
       		default:
       			break
 	  	}
-	  	
-	  	// finally, send to controller DTH, to change the state and to log important stuff in the event log
-	  	if (notifyController) {		// do we really need to send these to the controller?
-			// only send status updates to the controller if WE are running, or nobody else is
-			if (atomicState.run || ((switches.currentSwitch == 'off') && (switches.currentStatus != 'pause'))) {
-    			switches.notify(statStr, msg)
+    }
+	// finally, send to controller DTH, to change the state and to log important stuff in the event log
+	if (notifyController) {		// do we really need to send these to the controller?
+		// only send status updates to the controller if WE are running, or nobody else is
+		if (atomicState.run || ((switches.currentSwitch == 'off') && (switches.currentStatus != 'pause'))) {
+    		switches.notify(statStr, msg)
     			//sendEvent(device: switches, name: 'status', value: status, descriptionText: msg)
-			}	
-			else { // we aren't running, so we don't want to change the status of the controller
-				// send the event using the current status of the switch, so we don't change it 
-				//log.debug "note - direct sendEvent()"
-				switches.notify(switches.currentStatus, msg)
-				//sendEvent(Device: switches, name: 'status', value: switches.currentStatus, descriptionText: msg)
-			}
+		}	
+		else { // we aren't running, so we don't want to change the status of the controller
+			// send the event using the current status of the switch, so we don't change it 
+			//log.debug "note - direct sendEvent()"
+			switches.notify(switches.currentStatus, msg)
+			//sendEvent(Device: switches, name: 'status', value: switches.currentStatus, descriptionText: msg)
 	  	}
     }
 }
@@ -2191,6 +2195,10 @@ boolean isWeather(){
 		if (wdata.forecast.simpleforecast.forecastday[0].pop.isNumber()) popToday = wdata.forecast.simpleforecast.forecastday[0].pop.toFloat()
     	if (wdata.forecast.simpleforecast.forecastday[1].qpf_allday.in.isNumber()) qpfTomIn = wdata.forecast.simpleforecast.forecastday[1].qpf_allday.in.toFloat()
 		if (wdata.forecast.simpleforecast.forecastday[1].pop.isNumber()) popTom = wdata.forecast.simpleforecast.forecastday[1].pop.toFloat()
+		if (qpfTodayIn > 25.0) qpfTodayIn = 25.0
+		else if (qpfTodayIn < 0.0) qpfTodayIn = 0.0
+		if (qpfTomIn > 25.0) qpfTomIn = 25.0
+		else if (qpfTomIn < 0.0) qpfTomIn = 0.0
 		
     	// Get rainfall so far today
 		if (!wdata.current_observation) { // || !wdata.response.features.containsKey('conditions') || (wdata.response.features.conditions.toInteger() != 1)) {
