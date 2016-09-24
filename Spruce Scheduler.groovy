@@ -51,7 +51,7 @@ definition(
     name: "Spruce Scheduler v2.52",
     namespace: "plaidsystems",
     author: "Plaid Systems",
-    description: "Spruce automatic water scheduling app v2.52.7 (BAB)",
+    description: "Spruce automatic water scheduling app v2.52.9 (BAB)",
     category: "Green Living",
     iconUrl: "http://www.plaidsystems.com/smartthings/st_spruce_leaf_250f.png",
     iconX2Url: "http://www.plaidsystems.com/smartthings/st_spruce_leaf_250f.png",
@@ -841,7 +841,7 @@ private String getname(String i) {
 private String zipString() {
     if (!settings.zipcode) return "${location.zipCode}"
     //add pws for correct weatherunderground lookup
-    if (!settings.zipcode.isNumber()) return "pws:'${settings.zipcode}""
+    if (!settings.zipcode.isNumber()) return "pws:'${settings.zipcode}"
     else return settings.zipcode
 }
          
@@ -2433,8 +2433,10 @@ def createDPWMap() {
         	i++
       	}
       	if(i != ndaysAvailable) {
-    		log.debug 'ERROR: days and daysAvailable do not match.'
+    		log.debug 'ERROR: days and daysAvailable do not match in setup - overriding'
         	log.debug "${i} ${ndaysAvailable}"
+        	ndaysAvailable = i				// override incorrect setup execution
+        	state.daysAvailable = i
       	}
     }
     else {					// all days are available if settings.days == ""
