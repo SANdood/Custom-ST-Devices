@@ -51,6 +51,7 @@ metadata {
         command 'programOn'
         command 'programOff'
         command 'programWait'
+        command 'programEnd'
         command 'on'
         command 'off'
         command 'z1on'
@@ -143,8 +144,8 @@ metadata {
 		standardTile('switch', 'device.switch') {
             state 'off', label: 'Start', action: 'programOn', icon: 'st.Outdoor.outdoor12', backgroundColor: '#a9a9a9'
             state 'programOn', label: 'Wait', action: 'programOff', icon: 'st.contact.contact.open', backgroundColor: '#f6e10e'//, nextState: 'on'
-            state 'programWait', label: 'Wait', action: 'programOff', icon: 'st.contact.contact.open', backgroundColor: '#f6e10e'//, nextState: 'on'
-            state 'on', label: 'Running', action: 'off', icon: 'st.Outdoor.outdoor12', backgroundColor: '#3DC72E'
+            state 'programWait', label: 'Wait', action: 'programEnd', icon: 'st.contact.contact.open', backgroundColor: '#f6e10e'//, nextState: 'on'
+            state 'on', label: 'Running', action: 'programEnd', icon: 'st.Outdoor.outdoor12', backgroundColor: '#3DC72E'
 		}
         standardTile('runtime', 'device.runtime') {			
 			state '1', label: '1', icon: 'st.Office.office6', action: '2', backgroundColor: '#d9f3fa'
@@ -242,6 +243,12 @@ def programOn(){
 //used for schedule 
 def programWait(){
     sendEvent(name: 'switch', value: 'programWait', descriptionText: 'Initializing Schedule')  
+    }
+
+def programEnd(){
+	//sets switch to off and tells schedule switch is off/schedule complete with manaual
+    sendEvent(name: 'switch', value: 'off', descriptionText: 'Program manually turned off')
+    off() 
     }
     
 def programOff(){    
