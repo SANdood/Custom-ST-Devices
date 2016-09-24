@@ -514,9 +514,9 @@ private boolean zoneActive(String zoneStr){
 
 private String zoneString() {
 	String numberString = 'Add zones to setup'
-    if (zoneNumber) numberString = 'Zones enabled: ' + "${zoneNumber}"
-    if (learn) numberString += '\nSensor mode: Adaptive'
-    else numberString += '\nSensor mode: Delay'
+    if (zoneNumber) numberString = "Zones enabled: ${zoneNumber}"
+    if (learn) numberString = '${numberString}\nSensor mode: Adaptive'
+    else numberString = '${numberString}\nSensor mode: Delay'
     return numberString
 }
 
@@ -752,8 +752,8 @@ private String getZoneSummary(){
     int zone = 1
     createDPWMap()
     while(zone <= 16) {	  
-      	if (nozzle(zone) == 4) summary += "\n${zone}: ${settings."zone${zone}"}"
-      	else if ( (initDPW(zone) != 0) && zoneActive(zone.toString())) summary += '\n' + getaZoneSummary(zone)
+      	if (nozzle(zone) == 4) summary = "${summary}\n${zone}: ${settings."zone${zone}"}"
+      	else if ( (initDPW(zone) != 0) && zoneActive(zone.toString())) summary = "${summary}\n${getaZoneSummary(zone)}"
       	zone++
     }
     if (summary) return summary else return zoneString()	//"Setup all 16 zones"
@@ -1037,7 +1037,7 @@ private String getWaterStopList() {
 		contacts.each {
 			if (it.currentContact == contactStop) {
 				if (i > 1) deviceList += ', '
-				deviceList += it.displayName + ' is ' + contactStop
+				deviceList = "${deviceList}${it.displayName} is ${contactStop}"
 				i++
 			}
 		}
@@ -1046,7 +1046,7 @@ private String getWaterStopList() {
 		toggles.each {
 			if (it.currentSwitch == toggleStop) {
 				if (i > 1) deviceList += ', '
-				deviceList += it.displayName + ' is ' + toggleStop
+				deviceList = "${deviceList}${it.displayName) is ${toggleStop}"
 				i++
 			}
 		}
@@ -1148,7 +1148,6 @@ boolean busy(){
     if (settings.sync) {
 		if ((settings.sync.currentSwitch != 'off') || settings.sync.currentStatus == 'pause') {
             subscribe(settings.sync, 'switch.off', syncOn)
-            //if (!state.startTime && state.pauseTime) state.pauseTime = null		// haven't started yet
             note('schedule', "${app.label}: Waiting for ${sync} to complete before starting", 'c')
             return true
         }
@@ -1238,7 +1237,6 @@ def preCheck() {
 //start water program
 def cycleOn(){       
 	if (atomicState.run) {							// block if manually stopped during precheck which goes to cycleOff
-
         if (!isWaterStopped()) {					// make sure ALL the contacts and toggles aren't paused
             // All clear, let's start running!
             subscribe(switches, 'switch.off', cycleOff)
@@ -1257,7 +1255,6 @@ def cycleOn(){
             	}
             } 
             else if (state.pauseTime) {		// resuming after a pause
-			// def elapsedTime = (new Date(now() + (60000 * contactDelay).toLong())) - (state.pauseTime as Date))
 				def elapsedTime = Math.round((now() - state.pauseTime) / 60000)	// convert ms to minutes
 				int tt = state.totalTime + elapsedTime + 1
 				state.totalTime = tt		// keep track of the pauses, and the 1 minute delay above
@@ -1277,11 +1274,6 @@ def cycleOn(){
 
 //when switch reports off, watering program is finished
 def cycleOff(evt){
-	//fix to say manually turned off?? //
-	// unsubAllBut()
-	//unsubscribe(switches)
-    //switches.programOff()
-    
     if (atomicState.run) {
     	def ft = new Date()
     	atomicState.finishTime = ft									// this is important to reset the schedule after failures in busy()
@@ -1389,7 +1381,6 @@ def cycleLoop(int i)
           		runToday = 1	
           	}
           	else {
-//          	if (runToday == 0) {									// figure out if we need to run (if we don't already know we do)
           		dpw = getDPW(zone)									// figure out if we need to run (if we don't already know we do)
 	          	if (days && (days.contains('Even') || days.contains('Odd'))) {
             		def daynum = new Date().format('dd', location.timeZone)
@@ -1402,7 +1393,6 @@ def cycleLoop(int i)
             		def dpwMap = getDPWDays(dpw)
             		runToday = dpwMap[weekDay]  //1 or 0
             		if (isDebug) log.debug "Zone: ${zone} dpw: ${dpw} weekDay: ${weekDay} dpwMap: ${dpwMap} runToday: ${runToday}"
-            		// runToday = dpwMap[weekDay]	
           		}
           	}
 			
@@ -1424,8 +1414,6 @@ def cycleLoop(int i)
                 	rtime = calcRunTime(tpw, dpw)                
                 	//daily weather adjust if no sensor
                 	if(isSeason && (!learn || settings."sensor${zone}")) {
-                		//float sa = state.seasonAdj
-                		// if (sa == 0) { sa = 100.0; state.seasonAdj = 100.0 }
                 		rtime = Math.round(((rtime / cyc) * (state.seasonAdj / 100.0)) + 0.4)
                 	} 
                 	else {
@@ -1451,9 +1439,9 @@ def cycleLoop(int i)
     		float sadj = sa - 100.0
     		if (sadj > 0.0) plus = '+'											//display once in cycleLoop()
     		int iadj = Math.round(sadj)
-    		if (iadj != 0) seasonStr = "(Adjusting ${plus}${iadj}% for weather forecast)\n"
+    		if (iadj != 0) seasonStr = "Adjusting ${plus}${iadj}% for weather forecast\n"
     	}
-        note('moisture', "${app.label} Sensor status:\n${seasonStr}{$soilString}" /* + seasonStr + soilString */,'m')
+        note('moisture', "${app.label} Sensor status:\n${seasonStr}${soilString}" /* + seasonStr + soilString */,'m')
     }
 
     if (!runNowMap) {
@@ -1708,7 +1696,6 @@ def moisture(int i)
     def lastHumDate = settings."sensor${i}".latestState('humidity').date
     if (lastHumDate < yesterday) {
     	note('warning', "${app.label}: Please check sensor ${settings."sensor${i}"}, no humidity reports in the last ${hours} hours", 'a')
-    	// return [1, "Please check , no humidity reports in the last ${hours} hours \n"]
     	if (latestHum < spHum) 
     		latestHum = spHum - 1.0 			// amke sure we water and do seasonal adjustments, but not tpw adjustments
     	else 
@@ -1732,9 +1719,7 @@ def moisture(int i)
     int tpw = getTPW(i)
     int dpw = getDPW(i)
     int cpd = cycles(i)
-    //float tpwFloat = tpw.toFloat()
-	//float dpwFloat = dpw.toFloat()
-	//float cpdFloat = cpd.toFloat()
+
     if (isDebug) log.debug "moisture(${i}): tpw: ${tpw}, dpw: ${dpw}, cycles: ${cpd} (before adjustment)"
     
     float diffHum = 0.0
@@ -1930,13 +1915,11 @@ def note(String statStr, String msg, String msgType) {
 		// only send status updates to the controller if WE are running, or nobody else is
 		if (atomicState.run || ((switches.currentSwitch == 'off') && (switches.currentStatus != 'pause'))) {
     		switches.notify(statStr, msg)
-    			//sendEvent(device: switches, name: 'status', value: status, descriptionText: msg)
 		}	
 		else { // we aren't running, so we don't want to change the status of the controller
 			// send the event using the current status of the switch, so we don't change it 
 			//log.debug "note - direct sendEvent()"
 			switches.notify(switches.currentStatus, msg)
-			//sendEvent(Device: switches, name: 'status', value: switches.currentStatus, descriptionText: msg)
 	  	}
     }
 }
