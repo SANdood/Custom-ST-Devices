@@ -242,7 +242,7 @@ private String waterStoppersString(){
 			stoppers += it.displayName
 			i++
 		}
-		stoppers += "\nPause: When ${contactStop}\n"
+		stoppers = "${stoppers}\nPause: When ${contactStop}\n"
 	} 
 	else {
 		stoppers += ': None\n'
@@ -257,7 +257,7 @@ private String waterStoppersString(){
 			stoppers += it.displayName
 			i++
 		}
-		stoppers += "\nPause: When switched ${toggleStop}\n"
+		stoppers = "${stoppers}\nPause: When switched ${toggleStop}\n"
 	} 
 	else {
 		stoppers += ': None\n'
@@ -977,11 +977,11 @@ private def resetEverything() {
 
 // unsubscribe from ALL events EXCEPT app.touch
 private def unsubAllBut() {
-	//unsubscribe(switches)
-	//unsubWaterStoppers()
-	//if (sync) unsubscribe(sync)
-	unsubscribe()
-	subscribe(app, appTouch) 	// subscribe again, just in case
+	unsubscribe(switches)
+	unsubWaterStoppers()
+	if (settings.sync) unsubscribe(settings.sync)
+	//unsubscribe()
+	//subscribe(app, appTouch) 	// subscribe again, just in case
 }
 
 def appTouch(evt) {
@@ -1095,7 +1095,7 @@ private String getRunDays(day1,day2,day3,day4,day5,day6,day7)
 def manualStart(evt){
 	boolean running = attemptRecovery()		// clean up if prior run crashed
 	
-	if (enableManual && !atomicState.run && !running && (switches.currentSwitch == 'off') && (switches.currentsStatus != 'pause')){
+	if (enableManual && !atomicState.run && !running && /*(switches.currentSwitch == 'off') &&*/ (switches.currentsStatus != 'pause')){
         def runNowMap = []
         runNowMap = cycleLoop(0)    
         if (runNowMap)
@@ -1119,7 +1119,7 @@ def manualStart(evt){
                 if (mins == 1) s = ''
                 newString = "run time: ${hourString}${mins} minute${s}:\n"
             }
-            note('active', "${app.label}:\nManual run, watering in 1 minute: " + newString + runNowMap, 'd')                      
+            note('active', "${app.label}:\nManual run, watering in 1 minute: ${newString}${runNowMap}", 'd')                      
         }
         else {
         	note('skipping', "${app.label}: Manual run failed, check configuration", 'a')
@@ -1197,7 +1197,7 @@ def busyOff(evt){
 		Random rand = new Random() 						// just in case there are multiple schedules waiting on the same controller
 		int randomSeconds = rand.nextInt(120) + 15
     	runIn(randomSeconds, preCheck)					// no message so we don't clog the system
-    	note('active', "${app.label}: ${switches} finished, starting pre-check in ${randomSeconds} seconds (busyOff)", 'i')
+    	note('active', "${app.label}: ${switches} finished, starting pre-check in ${randomSeconds} seconds", 'i')
 	}
 }
 
@@ -1217,12 +1217,12 @@ def preCheck() {
 		switches.programWait()						// take over the controller so other schedules don't mess with us
 		runIn(45, checkRunMap)						// schedule checkRunMap() before doing weather check, gives isWeather 45s to complete
 													// because that seems to be a little more than the max that the ST platform allows
+		unsubAllBut()								// unsubscribe to everything except appTouch()
+		subscribe(switches, 'switch.off', cycleOff)	// and start setting up for today's cycle
 		def start = now()
 		note('active', "${app.label}: Starting pre-check", 'd')  //
 		def end = now()
 		log.debug "preCheck note active ${end - start}ms"
-		unsubAllBut()								// unsubscribe to everything except appTouch()
-		subscribe(switches, 'switch.off', cycleOff)	// and start setting up for today's cycle
 		
        	if (isWeather()) {							// set adjustments and check if we shold skip because of rain
        		resetEverything()						// if so, clean up our subscriptions
@@ -1237,22 +1237,12 @@ def preCheck() {
 
 //start water program
 def cycleOn(){       
-	if (atomicState.run) {							//vblock if manually stopped during precheck which goes to cycleOff
-// Moved to busy()
-//        if (sync) {
-//			if ((sync.currentSwitch != 'off') || sync.currentStatus == 'pause') {
-//                subscribe(sync, 'switch.off', syncOn)
-//                if (!state.startTime && state.pauseTime) state.pauseTime = null		// haven't started yet
-//                note('pause', "${app.label}: Waiting for ${sync} to complete before starting", 'w')
-//                return
-//            }
-//        }
+	if (atomicState.run) {							// block if manually stopped during precheck which goes to cycleOff
 
-        // master schedule complete (or null), check the control contacts
-        if (!isWaterStopped()) {		// make sure ALL the contacts and toggles aren't paused
+        if (!isWaterStopped()) {					// make sure ALL the contacts and toggles aren't paused
             // All clear, let's start running!
             subscribe(switches, 'switch.off', cycleOff)
-            subWaterStop()				// subscribe to all the pause contacts and toggles
+            subWaterStop()							// subscribe to all the pause contacts and toggles
             resume()
             
             // send the notification AFTER we start the controller (in case we run over our execution time limit)
@@ -1263,7 +1253,7 @@ def cycleOn(){
             	if (state.pauseTime) state.pauseTime = null
             	if (state.totalTime) {
                 	String finishTime = new Date(now() + (60000 * state.totalTime).toLong()).format('EEEE @ h:mm a', location.timeZone)
-                	newString = "${app.label}: Starting - ETC: " + finishTime
+                	newString = "${app.label}: Starting - ETC: ${finishTime}"
             	}
             } 
             else if (state.pauseTime) {		// resuming after a pause
@@ -1273,7 +1263,7 @@ def cycleOn(){
 				state.totalTime = tt		// keep track of the pauses, and the 1 minute delay above
     			String finishTime = new Date(atomicState.startTime + (60000 * tt).toLong()).format('EEEE @ h:mm a', location.timeZone) 
     			state.pauseTime = null
-    			newString = "${app.label}: Resuming - New ETC: " + finishTime
+    			newString = "${app.label}: Resuming - New ETC: ${finishTime}"
             }
             note('active', newString, 'd')
         }
@@ -1288,8 +1278,9 @@ def cycleOn(){
 //when switch reports off, watering program is finished
 def cycleOff(evt){
 	//fix to say manually turned off?? //
-	unsubAllBut()
-    switches.programOff()
+	// unsubAllBut()
+	//unsubscribe(switches)
+    //switches.programOff()
     
     if (atomicState.run) {
     	def ft = new Date()
@@ -1313,7 +1304,7 @@ def checkRunMap(){
         String zoneSummary = ''
         while(zone <= 16) {
         	def zs = settings."zone${zone}"
-        	if(zs && (zs!= 'Off') && (nozzle(zone) != 4)) zoneSummary += getaZoneSummary(zone)
+        	if(zs && (zs!= 'Off') && (nozzle(zone) != 4)) zoneSummary = "${zoneSummary}${getaZoneSummary(zone)}"
             zone++
         }
         // note() does the log.debug
@@ -1348,7 +1339,7 @@ def checkRunMap(){
                 if (mins == 1) s = ''
                 newString = "run time: ${hourString}${mins} minute${s}:\n"
             }
-            note('active', "${app.label}: Watering begins in 1 minute, " + newString + runNowMap, 'd')
+            note('active', "${app.label}: Watering begins in 1 minute, ${newString}${runNowMap}", 'd')
         }
         else {
             unsubscribe(switches)
@@ -1421,7 +1412,7 @@ def cycleLoop(int i)
 				def soil
             	if (i == 0) soil = moisture(0) 	// manual
             	else soil = moisture(zone)		// moisture check
-          		soilString += soil[1]
+          		soilString = "${soilString}${soil[1]}"
 
 				// Run this zone if soil moisture needed 
             	if ( soil[0] == 1 )
@@ -1435,10 +1426,10 @@ def cycleLoop(int i)
                 	if(isSeason && (!learn || settings."sensor${zone}")) {
                 		//float sa = state.seasonAdj
                 		// if (sa == 0) { sa = 100.0; state.seasonAdj = 100.0 }
-                		rtime = Math.round(((rtime / cyc) * (state.seasonAdj / 100.0)) + 0.5)
+                		rtime = Math.round(((rtime / cyc) * (state.seasonAdj / 100.0)) + 0.4)
                 	} 
                 	else {
-                		rtime = Math.round((rtime / cyc) + 0.5)	// let moisture handle the seasonAdjust for learn zones.    
+                		rtime = Math.round((rtime / cyc) + 0.4)	// let moisture handle the seasonAdjust for learn zones.    
                 	}
 					totalCycles += cyc
 					totalTime += (rtime * cyc)
@@ -1462,7 +1453,7 @@ def cycleLoop(int i)
     		int iadj = Math.round(sadj)
     		if (iadj != 0) seasonStr = "(Adjusting ${plus}${iadj}% for weather forecast)\n"
     	}
-        note('moisture', "${app.label} Sensor status:\n" + seasonStr + soilString,'m')
+        note('moisture', "${app.label} Sensor status:\n${seasonStr}{$soilString}" /* + seasonStr + soilString */,'m')
     }
 
     if (!runNowMap) {
@@ -1515,7 +1506,7 @@ def syncOn(evt){
     	Random rand = new Random() 						// just in case there are multiple schedules waiting on the same controller
 		int randomSeconds = rand.nextInt(120) + 15
     	runIn(randomSeconds, preCheck)					// no message so we don't clog the system
-    	note('schedule', "${app.label}: ${settings.sync} finished, starting pre-check in ${randomSeconds} seconds (syncOn)", 'c')
+    	note('schedule', "${app.label}: ${settings.sync} finished, starting pre-check in ${randomSeconds} seconds", 'c')
 	} // else, it is just pausing...keep waiting for the next "off"
 }
 
@@ -1554,7 +1545,7 @@ def waterStop(evt){
 	}
 	if (switches.currentSwitch != 'off') {
 		runIn(30, subOff)
-		switches.programOff()								// stop the water
+		switches.off()								// stop the water
 	}
 	else 
 		subscribe(switches, 'switch.off', cycleOff)
@@ -1570,7 +1561,7 @@ def subOff() {
 def offPauseCheck( evt ) {
 	unsubscribe(switches)
 	subscribe(switches, 'switch.off', cycleOff)
-	if ((switches.currentSwitch != off) && (switches.CurrentStatus != 'pause')) { // eat the first off while paused
+	if (/*(switches.currentSwitch != 'off') && */ (switches.currentStatus != 'pause')) { // eat the first off while paused
 		cycleOff(evt)
 	} 
 }
@@ -1830,7 +1821,7 @@ def moisture(int i)
     String plus = ''
     if (adjusted > 0) plus = '+'
     if (adjusted != 0) adjStr = ", ${plus}${adjusted} min"
-    if (Math.abs(adjusted) > 1) adjStr += 's'
+    if (Math.abs(adjusted) > 1) adjStr = "${adjStr}s"
     if (diffHum >= 0.0) { 				// water only if ground is drier than SP
     	moistureSum = "> ${settings."name${i}"}, Water: ${settings."sensor${i}"} @ ${latestHum}% (${spHum}%)${adjStr} (${newTPW} min/wk)\n"
         return [1, moistureSum]
@@ -1864,12 +1855,12 @@ int getDrySp(int i){
 def note(String statStr, String msg, String msgType) {
 
 	// send to debug first (near-zero cost)
-	log.debug statStr + ': ' + msg
+	log.debug "${statStr}: ${msg}"
 
 	// notify user second (small cost)
 	boolean notifyController = true
     if(settings.notify || settings.logAll) {
-    	String spruceMsg = 'Spruce ' + msg
+    	String spruceMsg = "Spruce ${msg}"
     	switch(msgType) {
     		case 'd':
       			if (settings.notify && settings.notify.contains('Daily')) {		// always log the daily events to the controller
@@ -2141,7 +2132,7 @@ boolean isWeather(){
 	// get only the data we need
 	// Moved geolookup to installSchedule()
 	String featureString = 'forecast/conditions'
-	if (isSeason) featureString += '/astronomy'
+	if (isSeason) featureString = "${featureString}/astronomy"
 	startMsecs= now()
     Map wdata = getWeatherFeature(featureString, wzipcode)
     endMsecs = now()
@@ -2171,7 +2162,7 @@ boolean isWeather(){
     		city = wdata.current_observation.observation_location.city 
     	else
     		city = wdata.current_observation.display_location.full
-    	if (wdata.current_observation.estimated.estimated) city += ' (estimated)'
+    	if (wdata.current_observation.estimated.estimated) city = "${city} (est)"
     }
     
     // OK, we have good data, let's start the analysis
@@ -2242,9 +2233,9 @@ boolean isWeather(){
    	if (wdata.forecast.simpleforecast.forecastday[1].high.fahrenheit.isNumber()) highTom = wdata.forecast.simpleforecast.forecastday[1].high.fahrenheit.toInteger()
    	
     String weatherString = "${app.label}: ${city} weather:\n TDA: ${highToday}F"
-    if (isRain) weatherString += ", ${qpfTodayIn}in rain (${Math.round(popToday)}% PoP)"
-    weatherString += "\n TMW: ${highTom}F"
-    if (isRain) weatherString += ", ${qpfTomIn}in rain (${Math.round(popTom)}% PoP)\n YDA: ${YRain}in rain"
+    if (isRain) weatherString = "${weatherString}, ${qpfTodayIn}in rain (${Math.round(popToday)}% PoP)"
+    weatherString = "${weatherString}\n TMW: ${highTom}F"
+    if (isRain) weatherString = "${weatherString}, ${qpfTomIn}in rain (${Math.round(popTom)}% PoP)\n YDA: ${YRain}in rain"
     
     if (isSeason)
     {   
@@ -2311,7 +2302,7 @@ boolean isWeather(){
        	sa = sa - 100.0 
         String plus = ''
         if (sa > 0) plus = '+'
-        weatherString += "\n Adjusting ${plus}${Math.round(sa)}% for weather forecast"
+        weatherString = "${weatherString}\n Adjusting ${plus}${Math.round(sa)}% for weather forecast"
         
         // Apply seasonal adjustment on Monday each week or at install
         if ((getWeekDay() == 1) || (state.weekseasonAdj == 0)) {
@@ -2346,7 +2337,7 @@ boolean isWeather(){
             	if (wa != 0) {
             		if (wa > 100.0) plus = '+'
             		String waStr = String.format('%.2f', (wa - 100.0))
-            		weatherString += "\n Seasonal adjustment of ${waStr}% for the week"
+            		weatherString = "${weatherString}\n Seasonal adjustment of ${waStr}% for the week"
             	}
             	setSeason()
             } 
