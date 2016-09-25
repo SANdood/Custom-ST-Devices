@@ -841,7 +841,7 @@ private String getname(String i) {
 private String zipString() {
     if (!settings.zipcode) return "${location.zipCode}"
     //add pws for correct weatherunderground lookup
-    if (!settings.zipcode.isNumber()) return "pws:'${settings.zipcode}"
+    if (!settings.zipcode.isNumber()) return "pws:${settings.zipcode}"
     else return settings.zipcode
 }
          
