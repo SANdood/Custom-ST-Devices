@@ -1091,7 +1091,7 @@ private String getRunDays(day1,day2,day3,day4,day5,day6,day7)
 def manualStart(evt){
 	boolean running = attemptRecovery()		// clean up if prior run crashed
 	
-	if (settings.enableManual && !running && (settings.switches.currentsStatus != 'pause')){
+	if (settings.enableManual && !running && (settings.switches.currentSwitch == 'off') && (settings.switches.currentStatus != 'pause')){
         def runNowMap = []
         runNowMap = cycleLoop(0)    
         if (runNowMap) { 
@@ -1155,18 +1155,18 @@ boolean busy(){
     }    
     
     // Check that the controller isn't waiting for a schedule to be provided from some schedule (could be this one)
-    if ((csw == 'programWait') && (cst != 'active')) {		// wait && !active, some schedule crashed early in preCheck()
-    	log.debug "switches ${csw}, status ${cst} (2nd)"
-		resetEverything()									// might be us, so get back to the start state
-    	return false
-    }
+//    if ((csw == 'programWait') && (cst != 'active')) {		// wait && !active, some schedule crashed early in preCheck()
+//    	log.debug "switches ${csw}, status ${cst} (2nd)"
+//		resetEverything()									// might be us, so get back to the start state
+//    	return false
+//    }
     
     // Another schedule (not this one) is running (or paused), but are we even supposed to run today?
     // To get here, the switches could be:
     // 		on
     //		off & pause
     //		programOn (!programWait)
-    //		programWait & !active 
+    //		programWait
     if (isDay()) {											// Yup, we need to run today, so wait for the other schedule to finish
     	log.debug "switches ${csw}, status ${cst} (3rd)"
     	resetEverything()
