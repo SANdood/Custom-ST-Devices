@@ -1091,7 +1091,7 @@ private String getRunDays(day1,day2,day3,day4,day5,day6,day7)
 def manualStart(evt){
 	boolean running = attemptRecovery()		// clean up if prior run crashed
 	
-	if (settings.enableManual && !running && (settings.switches.currentSwitch == 'off') && (settings.switches.currentStatus != 'pause')){
+	if (settings.enableManual && !running && (settings.switches.currentStatus != 'pause')){
         def runNowMap = []
         runNowMap = cycleLoop(0)    
         if (runNowMap) { 
