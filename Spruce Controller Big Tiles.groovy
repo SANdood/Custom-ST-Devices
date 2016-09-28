@@ -152,15 +152,15 @@ metadata {
                 attributeState "VALUE_DOWN", action: "levelDown"
             }
             
-            tileAttribute("device.rainsensor", key: "SECONDARY_CONTROL") {                          
-                attributeState "rainSensoroff", label: "${status_msg()}", icon: 'http://www.plaidsystems.com/smartthings/st_drop_slash.png'
-                attributeState "rainSensoron", label: "${status_msg()}", icon: 'http://www.plaidsystems.com/smartthings/st_drop_off.png'
-                attributeState "disable", label: "${status_msg()}", icon: ''
-                attributeState "enable", label: "${status_msg()}", icon: 'st.Weather.weather12'
-            }
+//            tileAttribute("device.rainsensor", key: "SECONDARY_CONTROL") {                          
+//                attributeState "rainSensoroff", label: "${status_msg()}", icon: 'http://www.plaidsystems.com/smartthings/st_drop_slash.png'
+//                attributeState "rainSensoron", label: "${status_msg()}", icon: 'http://www.plaidsystems.com/smartthings/st_drop_off.png'
+//                attributeState "disable", label: "${status_msg()}", icon: ''
+//                attributeState "enable", label: "${status_msg()}", icon: 'st.Weather.weather12'
+//            }
             
             tileAttribute("device.tileMessage", key: "SECONDARY_CONTROL") {
-                attributeState "tileMessage", label: '${currentValue}', icon: 'http://www.plaidsystems.com/smartthings/st_drop_off.png'              
+                attributeState "tileMessage", label: '${currentValue}' //, icon: 'http://www.plaidsystems.com/smartthings/st_drop_off.png'              
             }            
             
         }
@@ -178,8 +178,8 @@ metadata {
             state "enable", icon: 'http://www.plaidsystems.com/smartthings/st_drop_off.png'
 		}
         standardTile('switch1', 'device.switch1') {			
-			state 'z1off', label: '1', action: 'z1on', icon: 'st.Weather.weather12', backgroundColor: '#ffffff'
-            state 'z1on', label: '1', action: 'z1off', icon: 'http://www.plaidsystems.com/smartthings/st_drop_fill_blue.png', backgroundColor: '#46c2e8'
+			state 'z1off', label: '1', action: 'z1on', icon: 'st.valves.water.closed', backgroundColor: '#ffffff'
+            state 'z1on', label: '1', action: 'z1off', icon: 'st.valves.water.open', backgroundColor: '#46c2e8'
 		}
         standardTile('switch2', 'device.switch2') {            
             state 'z2off', label: '2', action: 'z2on', icon: 'st.valves.water.closed', backgroundColor: '#ffffff'
@@ -237,9 +237,9 @@ metadata {
             state 'z15off', label: '15', action: 'z15on', icon: 'st.valves.water.closed', backgroundColor: '#ffffff'
             state 'z15on', label: '15', action: 'z15off', icon: 'st.valves.water.open', backgroundColor: '#46c2e8'
 		}		
-        standardTile('switch16', 'device.switch16', inactiveLabel: false, decoration: 'flat') {            
-            state 'z16off',  label: '', action: 'z16on', icon: 'http://www.plaidsystems.com/smartthings/st_drop_off_16.png'//, backgroundColor: '#ffffff'
-            state 'z16on',  label: '', action: 'z16off', icon: 'http://www.plaidsystems.com/smartthings/st_drop_on_16.png'//, backgroundColor: '#46c2e8'
+        standardTile('switch16', 'device.switch16', inactiveLabel: false) {            
+            state 'z16off',  label: '16', action: 'z16on', icon: 'st.valves.water.closed', backgroundColor: '#ffffff'
+            state 'z16on',  label: '16', action: 'z16off', icon: 'st.valves.water.open', backgroundColor: '#46c2e8'
 		}        
         standardTile('refresh', 'device.switch', inactiveLabel: false, decoration: 'flat', width:2, height:2) {
 			state 'default', action: 'refresh', icon:'st.secondary.refresh'            
@@ -249,7 +249,8 @@ metadata {
 		}        
 		
         main (['switchall'])        
-        details(['switchall','switch','switch1','switch2','switch3','switch4','switch5','switch6','switch7','switch8','refresh','switch9','switch10','switch11','switch12','switch13','switch14','switch15','switch16'])		
+        details(['switchall','switch','switch1','switch2','switch3','switch4','switch5','switch6','switch7','switch8',
+        		'refresh','switch9','switch10','switch11','switch12','switch13','switch14','switch15','switch16'])		
     }       
 }
 
@@ -279,7 +280,7 @@ def programOff(){
 
 def status_msg(){
 	    
-    //return "test message"
+    return ""
 }
 
 //set minutes
@@ -394,10 +395,11 @@ def getAlarm(descMap){
 
 //status notify and change status
 def notify(String val, String txt){
-	String txtShort = txt.take(35)
+	sendEvent(name: 'status', value: val, descriptionText: txt, isStateChange: true, display: false) 
+	String txtShort = txt // .take(45)
     sendEvent(name: 'tileMessage', value: "${txtShort}", descriptionText: "", isStateChange: true, display: false) 
     
-    sendEvent(name: 'status', value: val, descriptionText: txt, isStateChange: true, display: false)    
+   
 }
 
 def updated(){
