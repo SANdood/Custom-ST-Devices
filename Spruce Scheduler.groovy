@@ -1117,7 +1117,7 @@ def manualStart(evt){
                 if (mins == 1) s = ''
                 newString = "run time: ${hourString}${mins} minute${s}:\n"
             }
-            note('active', "${app.label}:\nManual run, watering in 1 minute: ${newString}${runNowMap}", 'd')                      
+            note('active', "${app.label}: Manual run, watering in 1 minute: ${newString}${runNowMap}", 'd')                      
         }
         else note('skipping', "${app.label}: Manual run failed, check configuration", 'a')
     } 
