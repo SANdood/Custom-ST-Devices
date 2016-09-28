@@ -893,7 +893,10 @@ def installSchedule(){
         writeSettings()
         note('schedule', "${app.label}: Starts at ${startTimeString()}", 'i')
     }
-    else note('disable', "${app.label}: Automatic watering disabled or setup is incomplete", 'a')
+	else {
+		unschedule( preCheck )
+		note('disable', "${app.label}: Automatic watering disabled or setup is incomplete", 'a')
+	}
 }
 
 // Called to find and repair after crashes - called by installSchedule() and busy()
@@ -1196,7 +1199,7 @@ def busyOff(evt){
 def preCheck() {
     if (!isDay()) {
 		log.debug "preCheck() Skipping: ${app.label} is not scheduled for today"					// silent - no note
-		if (!atomicState.run && enableManual) subscribe(switches, 'switch.programOn', manualStart)	// only if we aren't running already
+		//if (!atomicState.run && enableManual) subscribe(switches, 'switch.programOn', manualStart)	// only if we aren't running already
 		return
 	}
 	
