@@ -135,12 +135,13 @@ metadata {
             attributeState 'raintom', label: 'Rain Tomorrow', icon: 'http://www.plaidsystems.com/smartthings/st_rain.png', backgroundColor: '#d65fe3'
             attributeState 'donewweek', label: 'Finished', icon: 'st.Outdoor.outdoor5', backgroundColor: '#52c435'
             attributeState 'skipping', label: 'Skip', icon: 'st.Outdoor.outdoor20', backgroundColor: '#46c2e8'
-            attributeState 'moisture', label: '', icon: 'st.Weather.weather2', backgroundColor: '#36cfe3'
-            attributeState 'pause', label: 'PAUSE', icon: 'st.contact.contact.open', backgroundColor: '#f2a51f'           
+            attributeState 'moisture', label: 'Ready', icon: 'st.Weather.weather2', backgroundColor: '#36cfe3'
+            attributeState 'pause', label: 'PAUSE', icon: 'st.contact.contact.open', backgroundColor: '#f2a51f'
+			attributeState 'delayed', label: 'Delayed', icon: 'st.contact.contact.open', backgroundColor: '#f2a51f'
             attributeState 'active', label: 'Active', icon: 'st.Outdoor.outdoor12', backgroundColor: '#3DC72E'
             attributeState 'season', label: 'Adjust', icon: 'st.Outdoor.outdoor17', backgroundColor: '#ffb900'
             attributeState 'disable', label: 'Off', icon: 'st.secondary.off', backgroundColor: '#888888'
-            attributeState 'warning', label: 'Ready', icon: 'http://www.plaidsystems.com/smartthings/st_spruce_leaf_225_top_yellow.png'
+            attributeState 'warning', label: 'Warning', icon: 'http://www.plaidsystems.com/smartthings/st_spruce_leaf_225_top_yellow.png'
             attributeState 'alarm', label: 'Alarm', icon: 'http://www.plaidsystems.com/smartthings/st_spruce_leaf_225_s_red.png', backgroundColor: '#e66565'//'#ed1f1f'
             }
             
