@@ -1143,7 +1143,7 @@ boolean busy(){
     if (settings.sync) {
 		if ((settings.sync.currentSwitch != 'off') || settings.sync.currentStatus == 'pause') {
             subscribe(settings.sync, 'switch.off', syncOn)
-            note('schedule', "${app.label}: Waiting for ${settings.sync.displayName} to complete before starting", 'c')
+            note('delayed', "${app.label}: Waiting for ${settings.sync.displayName} to complete before starting", 'c')
             return true
         }
     }
@@ -1174,7 +1174,7 @@ boolean busy(){
     	log.debug "switches ${csw}, status ${cst} (3rd)"
     	resetEverything()
     	subscribe(settings.switches, 'switch.off', busyOff)
-    	note('active', "${app.label}: Another schedule running, waiting to start", 'c')
+		note('delayed', "${app.label}: Waiting for currently running schedule to complete before starting", 'c')
        	return true
     }
     
@@ -1191,7 +1191,7 @@ def busyOff(evt){
 		Random rand = new Random() 						// just in case there are multiple schedules waiting on the same controller
 		int randomSeconds = rand.nextInt(120) + 15
     	runIn(randomSeconds, preCheck)					// no message so we don't clog the system
-    	note('active', "${app.label}: ${settings.switches} finished, starting pre-check in ${randomSeconds} seconds", 'i')
+    	note('active', "${app.label}: ${settings.switches} finished, starting in ${randomSeconds} seconds", 'i')
 	}
 }
 
@@ -1211,7 +1211,7 @@ def preCheck() {
 		unsubAllBut()								// unsubscribe to everything except appTouch()
 		subscribe(settings.switches, 'switch.off', cycleOff)	// and start setting up for today's cycle
 		def start = now()
-		note('active', "${app.label}: Starting pre-check", 'd')  //
+		note('active', "${app.label}: Starting...", 'd')  //
 		def end = now()
 		log.debug "preCheck note active ${end - start}ms"
 		
@@ -1236,7 +1236,7 @@ def cycleOn(){
             resume()
             
             // send the notification AFTER we start the controller (in case note() causes us to run over our execution time limit)
-            String newString = "${app.label}: Starting"
+            String newString = "${app.label}: Starting..."
             if (!atomicState.startTime) {
             	atomicState.startTime = now()				// if we haven't already started
             	if (atomicState.startTime) atomicState.finishTime = null		// so recovery in busy() knows we didn't finith 
@@ -1319,7 +1319,7 @@ def checkRunMap(){
                 if (mins == 1) s = ''
                 newString = "run time: ${hourString}${mins} minute${s}:\n"
             }
-            note('active', "${app.label}: Watering begins in 1 minute, ${newString}${runNowMap}", 'd')
+            note('active', "${app.label}: Watering in 1 minute, ${newString}${runNowMap}", 'd')
         }
         else {
             unsubscribe(settings.switches)
@@ -1481,7 +1481,7 @@ def syncOn(evt){
     	Random rand = new Random() 						// just in case there are multiple schedules waiting on the same controller
 		int randomSeconds = rand.nextInt(120) + 15
     	runIn(randomSeconds, preCheck)					// no message so we don't clog the system
-    	note('schedule', "${app.label}: ${settings.sync} finished, starting pre-check in ${randomSeconds} seconds", 'c')
+    	note('schedule', "${app.label}: ${settings.sync} finished, starting in ${randomSeconds} seconds", 'c')
 	} // else, it is just pausing...keep waiting for the next "off"
 }
 
@@ -1574,7 +1574,7 @@ def waterStart(evt){
 		// let cycleOn() change the status to Active - keep us paused until then
 		String s = ''
 		if (settings.contactDelay > 1) s = 's'
-   		note('pause', "${app.label}: ${evt.displayName} ${cond}, watering resumes in ${settings.contactDelay} minute${s}", 'c')  
+   		note('pause', "${app.label}: ${evt.displayName} ${cond}, watering in ${settings.contactDelay} minute${s}", 'c')  
 	} 
 	else {
 		log.debug "waterStart(): one down - ${evt.displayName}"
@@ -1859,7 +1859,7 @@ def note(String statStr, String msg, String msgType) {
       		case 'i':
       			if (settings.notify && settings.notify.contains('Events')) {
       				sendIt(spruceMsg)
-      				notifyController = false					// no need to notify controller unless we don't notify the user
+      				//notifyController = false					// no need to notify controller unless we don't notify the user
       			}
       			else if (settings.logAll) {
       				sendNotificationEvent(spruceMsg)
@@ -1884,7 +1884,7 @@ def note(String statStr, String msg, String msgType) {
       		case 'm':
       			if (settings.notify && settings.notify.contains('Moisture')) {
       				sendIt(spruceMsg)
-      				notifyController = false					// no need to notify controller unless we don't notify the user
+      				//notifyController = false					// no need to notify controller unless we don't notify the user
       			}
       			else if (settings.logAll) {
       				sendNotificationEvent(spruceMsg)
@@ -1897,13 +1897,13 @@ def note(String statStr, String msg, String msgType) {
 	// finally, send to controller DTH, to change the state and to log important stuff in the event log
 	if (notifyController) {		// do we really need to send these to the controller?
 		// only send status updates to the controller if WE are running, or nobody else is
-		if (atomicState.run || ((switches.currentSwitch == 'off') && (switches.currentStatus != 'pause'))) {
-    		switches.notify(statStr, msg)
+		if (atomicState.run || ((settings.switches.currentSwitch == 'off') && (settings.switches.currentStatus != 'pause'))) {
+    		settings.switches.notify(statStr, msg)
 		}	
 		else { // we aren't running, so we don't want to change the status of the controller
 			// send the event using the current status of the switch, so we don't change it 
 			//log.debug "note - direct sendEvent()"
-			switches.notify(switches.currentStatus, msg)
+			settings.switches.notify(settings.switches.currentStatus, msg)
 	  	}
     }
 }
@@ -2060,12 +2060,12 @@ def getRainToday() {
 	def wzipcode = zipString()   
     Map wdata = getWeatherFeature('conditions', wzipcode)
     if (!wdata) {
-    	note('warning', "${app.label}: Please check Zipcode setting, error: null", 'a')
+    	note('warning', "${app.label}: Please check Zipcode/PWS setting, error: null", 'a')
     } 
     else {
 		if (!wdata.response || wdata.response.containsKey('error')) {
 			log.debug wdata.response
-   			note('warning', "${app.label}: Please check Zipcode setting, error:\n${wdata.response.error.type}: ${wdata.response.error.description}" , 'a')
+   			note('warning', "${app.label}: Please check Zipcode/PWS setting, error:\n${wdata.response.error.type}: ${wdata.response.error.description}" , 'a')
 		} 
 		else {
 			float TRain = 0.0
@@ -2108,7 +2108,7 @@ boolean isWeather(){
     	if (isDebug) log.debug wdata.response
 		if (wdata.response.containsKey('error')) {
         	if (wdata.response.error.type != 'invalidfeature') {
-    			note('warning', "${app.label}: Please check Zipcode setting, error:\n${wdata.response.error.type}: ${wdata.response.error.description}" , 'a')
+    			note('warning', "${app.label}: Please check Zipcode/PWS setting, error:\n${wdata.response.error.type}: ${wdata.response.error.description}" , 'a')
         		return false
             } 
             else {
@@ -2119,7 +2119,7 @@ boolean isWeather(){
     } 
     else {
     	if (isDebug) log.debug 'wdata is null'
-    	note('warning', "${app.label}: Please check Zipcode setting, error: null" , 'a')
+    	note('warning', "${app.label}: Please check Zipcode/PWS setting, error: null" , 'a')
     	return false
     }
     
