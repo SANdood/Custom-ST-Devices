@@ -1,5 +1,5 @@
 /**
- *  Spruce Controller V2 Big Tiles *
+ *  Spruce Controller V2_4 Big Tiles *
  *  Copyright 2015 Plaid Systems
  *
  *	Author: NC
@@ -60,6 +60,8 @@ metadata {
         
         command 'on'
         command 'off'
+        command 'zon'
+        command 'zoff'
         command 'z1on'
 		command 'z1off'
 		command 'z2on'
@@ -104,9 +106,9 @@ metadata {
         command 'updated'      
         
 		//ST release
-		fingerprint endpointId: '1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18', profileId: '0104', deviceId: '0002', deviceVersion: '00', inClusters: '0000,0003,0004,0005,0006,000F', outClusters: '0003, 0019', manufacturer: 'PLAID SYSTEMS', model: 'PS-SPRZ16-01'
+		//fingerprint endpointId: '1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18', profileId: '0104', deviceId: '0002', deviceVersion: '00', inClusters: '0000,0003,0004,0005,0006,000F', outClusters: '0003, 0019', manufacturer: 'PLAID SYSTEMS', model: 'PS-SPRZ16-01'
 		//new release
-        //fingerprint endpointId: "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18", profileId: "0104", deviceId: "0002", deviceVersion: "00", inClusters: "0000,0003,0004,0005,0006,000F", outClusters: "0003, 0019", manufacturer: "PLAID SYSTEMS", model: "PS-SPRZ16-01"
+        fingerprint endpointId: "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18", profileId: "0104", deviceId: "0002", deviceVersion: "00", inClusters: "0000,0003,0004,0005,0006,0009,000A,000F", outClusters: "0003, 0019", manufacturer: "PLAID SYSTEMS", model: "PS-SPRZ16-01"
 		
 	}
 
@@ -142,7 +144,7 @@ metadata {
             attributeState 'season', label: 'Adjust', icon: 'st.Outdoor.outdoor17', backgroundColor: '#ffb900'
             attributeState 'disable', label: 'Off', icon: 'st.secondary.off', backgroundColor: '#888888'
             attributeState 'warning', label: 'Warning', icon: 'http://www.plaidsystems.com/smartthings/st_spruce_leaf_225_top_yellow.png'
-            attributeState 'alarm', label: 'Alarm', icon: 'http://www.plaidsystems.com/smartthings/st_spruce_leaf_225_s_red.png', backgroundColor: '#e66565'//'#ed1f1f'
+            attributeState 'alarm', label: 'Alarm', icon: 'http://www.plaidsystems.com/smartthings/st_spruce_leaf_225_s_red.png', backgroundColor: '#e66565'
             }
             
             tileAttribute("device.minutes", key: "VALUE_CONTROL") {
@@ -261,7 +263,7 @@ def programWait(){
 def programEnd(){
 	//sets switch to off and tells schedule switch is off/schedule complete with manaual
     sendEvent(name: 'switch', value: 'off', descriptionText: 'Program manually turned off')
-    off() 
+    zoff() 
     }
     
 def programOff(){    
@@ -620,17 +622,29 @@ private byte[] reverseArray(byte[] array) {
     return array
 }
 
+//on & off redefined for Alexa to start manual schedule
+def on() {    
+    log.debug 'Alexa on'
+    //schedule subscribes to programOn
+    sendEvent(name: 'switch', value: 'programOn', descriptionText: 'Alexa turned program on')
+    //programOn()       
+}
+def off() {
+	log.debug 'Alexa off'
+    sendEvent(name: 'switch', value: 'off', descriptionText: 'Alexa turned program off')
+    zoff()        
+}
+
 // Commands to device
 //zones on - 8
-def on() {    
-    "st cmd 0x${device.deviceNetworkId} 1 6 1 {}"    
+def zon() {
+	"st cmd 0x${device.deviceNetworkId} 1 6 1 {}"
 }
-def off() {    
-    "st cmd 0x${device.deviceNetworkId} 1 6 0 {}"    
+def zoff() {
+	"st cmd 0x${device.deviceNetworkId} 1 6 0 {}" 
 }
 def z1on() {	
-    return manual() + "st cmd 0x${device.deviceNetworkId} 2 6 1 {}"
-    
+    return manual() + "st cmd 0x${device.deviceNetworkId} 2 6 1 {}"    
 }
 def z1off() {    
     "st cmd 0x${device.deviceNetworkId} 2 6 0 {}"
