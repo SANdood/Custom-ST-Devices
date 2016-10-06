@@ -1,5 +1,5 @@
 /**
- *  Spruce Scheduler Pre-release V2.52.8 - Updated 9/20/2016, BAB
+ *  Spruce Scheduler Pre-release V2.52.8 - Updated 10/05/2016, BAB
  *
  *	
  *  Copyright 2015 Plaid Systems
@@ -155,7 +155,7 @@ def globalPage() {
 
         section('Push Notifications') {
                 input(name: 'notify', type: 'enum', title: 'Select what push notifications to receive.', required: false, 
-                	multiple: true, metadata: [values: ['Daily', 'Weekly', 'Delays', 'Warnings', 'Weather', 'Moisture', 'Events']])
+                	multiple: true, metadata: [values: ['Daily', 'Delays', 'Warnings', 'Weather', 'Moisture', 'Events']])
                 input('recipients', 'contact', title: 'Send push notifications to', required: false, multiple: true)
                 input(name: 'logAll', type: 'bool', title: 'Log all notices to Hello Home?', defaultValue: 'false', options: ['true', 'false'])
         } 
@@ -262,11 +262,9 @@ private String waterStoppersString(){
 	else {
 		stoppers += ': None\n'
 	}
-	int cd = 1
-	if (settings.contactDelay && settings.contactDelay.isNumber()) cd = settings.contactDelay.toInteger()
-	String s = ''
-	if (cd > 1) s = 's'
-	stoppers += "Restart Delay: ${cd} min${s}"
+	int cd = 10
+	if (settings.contactDelay && settings.contactDelay > 10) cd = settings.contactDelay.toInteger()	
+	stoppers += "Restart Delay: ${cd} secs"
 	return stoppers
 }
 
@@ -287,7 +285,7 @@ private String notifyString(){
 	String notifyStr = ''
 	if(settings.notify) {
       	if (settings.notify.contains('Daily')) 		notifyStr += ' Daily'
-      	if (settings.notify.contains('Weekly')) 	notifyStr += ' Weekly'
+      	//if (settings.notify.contains('Weekly')) 	notifyStr += ' Weekly'
       	if (settings.notify.contains('Delays')) 	notifyStr += ' Delays'
       	if (settings.notify.contains('Warnings')) 	notifyStr += ' Warnings'
       	if (settings.notify.contains('Weather')) 	notifyStr += ' Weather'
@@ -318,6 +316,7 @@ private String daysString(){
         }
     }
     if(daysString == '') return ' Any'
+
     else return daysString
 }
     
@@ -330,6 +329,8 @@ private String hhmm(time, fmt = 'h:mm a'){
  
 private String pumpDelayString(){
     if (!pumpDelay) return '0' else return pumpDelay as String
+
+
 }
  
 def delayPage() {
@@ -363,8 +364,8 @@ def delayPage() {
 			if (toggles) 
 				input(name: 'toggleStop', title: 'Stop watering when switches are...', type: 'enum', 
 					required: (settings.toggles != null), options: ['on', 'off'], defaultValue: 'off')
-			input(name: 'contactDelay', type: 'number', title: 'Restart watering how many minutes after all contacts and switches' +
-					'are reset?', defaultValue: '1', required: false)
+			input(name: 'contactDelay', type: 'number', title: 'Restart watering how many seconds after all contacts and switches ' +
+					'are reset? (minimum 10s)', defaultValue: '10', required: false)
         }
         
         section(''){
@@ -882,10 +883,11 @@ def installSchedule(){
     long randomOffset = 0
     
     // always collect rainfall
-    int randomSeconds = rand.nextInt(60) + 2
+    int randomSeconds = rand.nextInt(59)
     schedule("${randomSeconds} 57 23 1/1 * ? *", getRainToday)		// capture today's rainfall just before midnight
 
     if (settings.switches && settings.startTime && settings.enable){
+
     	randomOffset = rand.nextInt(60000) + 20000
         def checktime = timeToday(settings.startTime, location.timeZone).getTime() + randomOffset
         //log.debug "randomOffset ${randomOffset} checktime ${checktime}"
@@ -972,7 +974,7 @@ private def resetEverything() {
 	unschedule(checkRunMap)
 	unschedule(writeCycles)
 	unschedule(subOff)
-	
+
 	if (settings.enableManual) subscribe(settings.switches, 'switch.programOn', manualStart)
 }
 
@@ -981,18 +983,23 @@ private def unsubAllBut() {
 	unsubscribe(settings.switches)
 	unsubWaterStoppers()
 	if (settings.sync) unsubscribe(settings.sync)
+
 }
 
 // enable the "Play" button in SmartApp list
 def appTouch(evt) {
+
 	log.debug "appTouch(): atomicState.run = ${atomicState.run}"
+
 	runIn(2, preCheck)						// run it off a schedule, so we can see how long it takes in the app.state
 }
 
 // true if one of the stoppers is in Stop state
 private boolean isWaterStopped() {
 	if (settings.contacts && settings.contacts.currentContact.contains(settings.contactStop)) return true
+
 	if (settings.toggles && settings.toggles.currentSwitch.contains(settings.toggleStop)) return true
+
 	return false
 }
 
@@ -1097,12 +1104,14 @@ def manualStart(evt){
 	if (settings.enableManual && !running && (settings.switches.currentStatus != 'pause')){
         def runNowMap = []
         runNowMap = cycleLoop(0)    
+
         if (runNowMap) { 
         	atomicState.run = true
         	settings.switches.programWait()
 			subscribe(settings.switches, 'switch.off', cycleOff)
 
             runIn(60, cycleOn)   			// start water program
+
             								// note that manual DOES abide by waterStoppers (if configured)
             String newString = ''
             int tt = state.totalTime
@@ -1117,9 +1126,11 @@ def manualStart(evt){
                 if (mins == 1) s = ''
                 newString = "run time: ${hourString}${mins} minute${s}:\n"
             }
+
             note('active', "${app.label}: Manual run, watering in 1 minute: ${newString}${runNowMap}", 'd')                      
         }
         else note('skipping', "${app.label}: Manual run failed, check configuration", 'a')
+
     } 
     else note('skipping', "${app.label}: Manual run aborted, ${settings.switches.displayName} appears to be busy", 'a')
 }
@@ -1143,6 +1154,7 @@ boolean busy(){
     if (settings.sync) {
 		if ((settings.sync.currentSwitch != 'off') || settings.sync.currentStatus == 'pause') {
             subscribe(settings.sync, 'switch.off', syncOn)
+
             note('delayed', "${app.label}: Waiting for ${settings.sync.displayName} to complete before starting", 'c')
             return true
         }
@@ -1151,6 +1163,7 @@ boolean busy(){
     // Check that the controller isn't paused while running some other schedule
     def csw = settings.switches.currentSwitch
     def cst = settings.switches.currentStatus
+
     if ((csw == 'off') && (cst != 'pause')) {				// off && !paused: controller is NOT in use
 		log.debug "switches ${csw}, status ${cst} (1st)"
 		resetEverything()									// get back to the start state
@@ -1164,6 +1177,8 @@ boolean busy(){
 //    	return false
 //    }
     
+
+
     // Another schedule (not this one) is running (or paused), but are we even supposed to run today?
     // To get here, the switches could be:
     // 		on
@@ -1197,6 +1212,7 @@ def busyOff(evt){
 
 //run check every day
 def preCheck() {
+
     if (!isDay()) {
 		log.debug "preCheck() Skipping: ${app.label} is not scheduled for today"					// silent - no note
 		//if (!atomicState.run && enableManual) subscribe(switches, 'switch.programOn', manualStart)	// only if we aren't running already
@@ -1229,6 +1245,7 @@ def preCheck() {
 //start water program
 def cycleOn(){       
 	if (atomicState.run) {							// block if manually stopped during precheck which goes to cycleOff
+
         if (!isWaterStopped()) {					// make sure ALL the contacts and toggles aren't paused
             // All clear, let's start running!
             subscribe(settings.switches, 'switch.off', cycleOff)
@@ -1239,18 +1256,19 @@ def cycleOn(){
             String newString = "${app.label}: Starting..."
             if (!atomicState.startTime) {
             	atomicState.startTime = now()				// if we haven't already started
-            	if (atomicState.startTime) atomicState.finishTime = null		// so recovery in busy() knows we didn't finith 
+            	if (atomicState.startTime) atomicState.finishTime = null		// so recovery in busy() knows we didn't finish 
             	if (state.pauseTime) state.pauseTime = null
             	if (state.totalTime) {
-                	String finishTime = new Date(now() + (60000 * state.totalTime).toLong()).format('EEEE @ h:mm a', location.timeZone)
+                	String finishTime = new Date(now() + (60000 * state.totalTime).toLong()).format('EE @ h:mm a', location.timeZone)
                 	newString = "${app.label}: Starting - ETC: ${finishTime}"
             	}
             } 
             else if (state.pauseTime) {		// resuming after a pause
+
 				def elapsedTime = Math.round((now() - state.pauseTime) / 60000)	// convert ms to minutes
 				int tt = state.totalTime + elapsedTime + 1
 				state.totalTime = tt		// keep track of the pauses, and the 1 minute delay above
-    			String finishTime = new Date(atomicState.startTime + (60000 * tt).toLong()).format('EEEE @ h:mm a', location.timeZone) 
+    			String finishTime = new Date(atomicState.startTime + (60000 * tt).toLong()).format('EE @ h:mm a', location.timeZone) 
     			state.pauseTime = null
     			newString = "${app.label}: Resuming - New ETC: ${finishTime}"
             }
@@ -1266,6 +1284,7 @@ def cycleOn(){
 
 //when switch reports off, watering program is finished
 def cycleOff(evt){
+
     if (atomicState.run) {
     	def ft = new Date()
     	atomicState.finishTime = ft									// this is important to reset the schedule after failures in busy()
@@ -1280,21 +1299,10 @@ def cycleOff(evt){
 
 //run check each day at scheduled time
 def checkRunMap(){
-    // Create weekly water summary, if requested, on Tuesday
-    if ((settings.logAll || (settings.notify && settings.notify.contains('Weekly'))) && (getWeekDay() == 3))
-    {
-    	int zone = 1
-        String zoneSummary = ''
-        while(zone <= 16) {
-        	def zs = settings."zone${zone}"
-        	if(zs && (zs!= 'Off') && (nozzle(zone) != 4)) zoneSummary = "${zoneSummary}${getaZoneSummary(zone)}"
-            zone++
-        }
-        note('season', "${app.label}: Weekly water summary:\n${zoneSummary}", 'w' )
-    }    
     
 	//check if isWeather returned true or false before checking
     if (atomicState.run) {
+
         //get & set watering times for today
         def runNowMap = []    
         runNowMap = cycleLoop(1)		// build the map
@@ -1359,6 +1367,7 @@ def cycleLoop(int i)
         rtime = 0
         def setZ = settings."zone${zone}"
         if ((setZ && (setZ != 'Off')) && (nozzle(zone) != 4) && zoneActive(zone.toString())) {
+
 		  	// First check if we run this zone today, use either dpwMap or even/odd date
 		  	dpw = getDPW(zone)          
           	int runToday = 0
@@ -1368,6 +1377,7 @@ def cycleLoop(int i)
           		runToday = 1	
           	}
           	else {
+
           		dpw = getDPW(zone)									// figure out if we need to run (if we don't already know we do)
 	          	if (settings.days && (settings.days.contains('Even') || settings.days.contains('Odd'))) {
             		def daynum = new Date().format('dd', location.timeZone)
@@ -1380,6 +1390,7 @@ def cycleLoop(int i)
             		def dpwMap = getDPWDays(dpw)
             		runToday = dpwMap[weekDay]  //1 or 0
             		if (isDebug) log.debug "Zone: ${zone} dpw: ${dpw} weekDay: ${weekDay} dpwMap: ${dpwMap} runToday: ${runToday}"
+
           		}
           	}
 			
@@ -1401,6 +1412,8 @@ def cycleLoop(int i)
                 	rtime = calcRunTime(tpw, dpw)                
                 	//daily weather adjust if no sensor
                 	if(settings.isSeason && (!settings.learn || !settings."sensor${zone}")) {
+
+
                 		rtime = Math.round(((rtime / cyc) * (state.seasonAdj / 100.0)) + 0.4)
                 	} 
                 	else {
@@ -1471,7 +1484,7 @@ def writeCycles(){
 
 def resume(){
 	log.debug 'resume()'
-	settings.switches.on()    
+	settings.switches.zon()    
 }
 
 def syncOn(evt){
@@ -1544,7 +1557,9 @@ def offPauseCheck( evt ) {
 // handle end of pause session     
 def waterStart(evt){
 	if (!isWaterStopped()){ 					// only if ALL of the selected contacts are not open
-		runIn(settings.contactDelay * 60, cycleOn)
+		def cDelay = 5
+        if (settings.contactDelay > 5) cDelay = settings.contactDelay
+        runIn(cDelay, cycleOn)
 		
 		unsubscribe(settings.switches)
 		subWaterStop()							// allow stopping again while we wait for cycleOn to start
@@ -1572,9 +1587,12 @@ def waterStart(evt){
 				break
 		}
 		// let cycleOn() change the status to Active - keep us paused until then
-		String s = ''
+		/*
+        String s = ''
 		if (settings.contactDelay > 1) s = 's'
-   		note('pause', "${app.label}: ${evt.displayName} ${cond}, watering in ${settings.contactDelay} minute${s}", 'c')  
+   		note('pause', "${app.label}: ${evt.displayName} ${cond}, watering in ${settings.contactDelay} minute${s}", 'c')
+        */
+        note('pause', "${app.label}: ${evt.displayName} ${cond}, watering in ${cDelay} seconds", 'c')
 	} 
 	else {
 		log.debug "waterStart(): one down - ${evt.displayName}"
@@ -1683,6 +1701,7 @@ def moisture(int i)
     def lastHumDate = settings."sensor${i}".latestState('humidity').date
     if (lastHumDate < yesterday) {
     	note('warning', "${app.label}: Please check sensor ${settings."sensor${i}"}, no humidity reports in the last ${hours} hours", 'a')
+
     	if (latestHum < spHum) 
     		latestHum = spHum - 1.0 			// amke sure we water and do seasonal adjustments, but not tpw adjustments
     	else 
@@ -1707,6 +1726,9 @@ def moisture(int i)
     int tpw = getTPW(i)
     int dpw = getDPW(i)
     int cpd = cycles(i)
+
+
+
 
     if (isDebug) log.debug "moisture(${i}): tpw: ${tpw}, dpw: ${dpw}, cycles: ${cpd} (before adjustment)"
     
@@ -1809,7 +1831,11 @@ def moisture(int i)
 //get moisture SP
 int getDrySp(int i){
     if (settings."sensorSp${i}") return settings."sensorSp${i}".toInteger() // configured SP
+
+
     if (settings."plant${i}" == 'New Plants') return 40    					// New Plants get special care
+
+
     switch (settings."option${i}") {										// else, defaults based off of soil type
         case 'Sand':
             return 22
@@ -1839,7 +1865,7 @@ def note(String statStr, String msg, String msgType) {
       				sendNotificationEvent(spruceMsg)
       			}
       			break
-      		case 'w':
+      /*		case 'w':
       			notifyController = false						// dont bother with the weekly report
       			if (settings.notify && settings.notify.contains('Weekly')) {
       				sendIt(spruceMsg)
@@ -1848,7 +1874,7 @@ def note(String statStr, String msg, String msgType) {
       				sendNotificationEvent(spruceMsg)
       			}
       			break
-  			case 'c':
+  	*/		case 'c':
   				if (settings.notify && settings.notify.contains('Delays')) {
       				sendIt(spruceMsg)
       			}
@@ -1899,11 +1925,13 @@ def note(String statStr, String msg, String msgType) {
 		// only send status updates to the controller if WE are running, or nobody else is
 		if (atomicState.run || ((settings.switches.currentSwitch == 'off') && (settings.switches.currentStatus != 'pause'))) {
     		settings.switches.notify(statStr, msg)
+
 		}	
 		else { // we aren't running, so we don't want to change the status of the controller
 			// send the event using the current status of the switch, so we don't change it 
 			//log.debug "note - direct sendEvent()"
 			settings.switches.notify(settings.switches.currentStatus, msg)
+
 	  	}
     }
 }
@@ -2043,6 +2071,7 @@ def setSeason() {
     int zone = 1
     while(zone <= 16) {    		
     	if ( !settings.learn || !settings."sensor${zone}" || state.tpwMap[zone-1] == 0) {
+
             int tpw = initTPW(zone)		// now updates state.tpwMap
             int dpw = initDPW(zone)		// now updates state.dpwMap
             if (isDebug) {
@@ -2060,6 +2089,7 @@ def getRainToday() {
 	def wzipcode = zipString()   
     Map wdata = getWeatherFeature('conditions', wzipcode)
     if (!wdata) {
+
     	note('warning', "${app.label}: Please check Zipcode/PWS setting, error: null", 'a')
     } 
     else {
@@ -2124,9 +2154,13 @@ boolean isWeather(){
     }
     
     String city = wzipcode
+
+
+
     if (wdata.current_observation) { 
     	if (wdata.current_observation.observation_location.city != '') city = wdata.current_observation.observation_location.city 
     	else if (wdata.current_observation.observation_location.full != '') city = wdata.current_observation.display_location.full
+
     	if (wdata.current_observation.estimated.estimated) city = "${city} (est)"
     }
     
@@ -2143,6 +2177,7 @@ boolean isWeather(){
     	if (isDebug) log.debug 'isWeather(): isRain'
     	
     	// Get forecasted rain for today and tomorrow
+
 		if (!wdata.forecast) {
     		log.debug 'isWeather(): Unable to get weather forecast.'
     		return false
@@ -2157,6 +2192,7 @@ boolean isWeather(){
 		else if (qpfTomIn < 0.0) qpfTomIn = 0.0
 		
     	// Get rainfall so far today
+
 		if (!wdata.current_observation) {
     		log.debug 'isWeather(): Unable to get current weather conditions.'
     		return false
@@ -2205,6 +2241,7 @@ boolean isWeather(){
     if (settings.isSeason)
     {   
 		if (!settings.isRain) { 							// we need to verify we have good data first if we didn't do it above
+
 			if (!wdata.forecast) {
     			log.debug 'Unable to get weather forecast'
     			return false
@@ -2272,6 +2309,7 @@ boolean isWeather(){
         // Apply seasonal adjustment on Monday each week or at install
         if ((getWeekDay() == 1) || (state.weekseasonAdj == 0)) {
             //get daylight
+
  			if (wdata.sun_phase) { 
             	int getsunRH = 0
             	int getsunRM = 0
@@ -2624,3 +2662,4 @@ def zoneSetPage16(){
 	state.app = 16
     zoneSetPage()
     }
+
