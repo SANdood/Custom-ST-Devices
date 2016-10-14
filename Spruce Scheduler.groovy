@@ -1557,8 +1557,8 @@ def offPauseCheck( evt ) {
 // handle end of pause session     
 def waterStart(evt){
 	if (!isWaterStopped()){ 					// only if ALL of the selected contacts are not open
-		def cDelay = 5
-        if (settings.contactDelay > 5) cDelay = settings.contactDelay
+		def cDelay = 10
+        if (settings.contactDelay > 10) cDelay = settings.contactDelay
         runIn(cDelay, cycleOn)
 		
 		unsubscribe(settings.switches)
@@ -1587,11 +1587,6 @@ def waterStart(evt){
 				break
 		}
 		// let cycleOn() change the status to Active - keep us paused until then
-		/*
-        String s = ''
-		if (settings.contactDelay > 1) s = 's'
-   		note('pause', "${app.label}: ${evt.displayName} ${cond}, watering in ${settings.contactDelay} minute${s}", 'c')
-        */
         note('pause', "${app.label}: ${evt.displayName} ${cond}, watering in ${cDelay} seconds", 'c')
 	} 
 	else {
