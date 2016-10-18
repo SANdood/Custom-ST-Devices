@@ -980,11 +980,11 @@ private def resetEverything() {
 
 // unsubscribe from ALL events EXCEPT app.touch
 private def unsubAllBut() {
-	unsubscribe()
+	//unsubscribe()
 	unsubscribe(settings.switches)
 	unsubWaterStoppers()
 	if (settings.sync) unsubscribe(settings.sync)
-	subscribe(app, appTouch)
+	//subscribe(app, appTouch)
 }
 
 // enable the "Play" button in SmartApp list
