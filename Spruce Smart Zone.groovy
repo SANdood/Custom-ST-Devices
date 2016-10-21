@@ -1,124 +1,352 @@
 /**
- *  Sample code to turn a Spruce zone on and off based on moisture or time
- *	Set preferences
- *	Subscribe and unsubscribe to sensors
+ *  SmartApp that will turn a Spruce zone on and off based on Spruce sensor moisture level and (optionally) daily
  *  Spruce specific commands:
- *		z1on, z1off, z2on, z2off, z3on, z3off, z4on,z4off up to 16
- *  	notify(status,message)
+ *		zone commands: z1on, z1off, z2on, z2off, z3on, z3off, ... 			// up to 16
+ *		controller commands: programOn, programEnd 							// interactions with standard Spruce scheduler SmartApp
+ * 							 notify(status,message)							// updates controller status display
+ *		zone events: switch1.z1off, switch2.z2off, switch3.z3off, ...		// up to 16 - allows for manual zone shutoff
+ *  	
  */
 
 definition(
-    name: "Zone Moisture",
+    name: "Spruce Smart Zone",
     namespace: "plaidsystems",
     author: "plaidsystems",
-    description: "Zone controlled by moisture",
+    description: "Spruce zone controlled by Spruce moisture sensor. Runs a single zone whenever soil moisture falls below set percentage.",
     category: "My Apps",
-    iconUrl: "https://s3.amazonaws.com/smartapp-icons/Convenience/Cat-Convenience.png",
-    iconX2Url: "https://s3.amazonaws.com/smartapp-icons/Convenience/Cat-Convenience%402x.png",
-    iconX3Url: "https://s3.amazonaws.com/smartapp-icons/Convenience/Cat-Convenience%402x.png",
+    iconUrl: "http://www.plaidsystems.com/smartthings/st_spruce_leaf_250f.png",
+    iconX2Url: "http://www.plaidsystems.com/smartthings/st_spruce_leaf_250f.png",
+    iconX3Url: "http://www.plaidsystems.com/smartthings/st_spruce_leaf_250f.png",
     oauth: false)
 
 preferences {
-	section("Select switches to control...") {
-		input name: "switches", type: "capability.switch", multiple: true
+	section("Select Spruce Controller or switch") {
+		input name: "controller", type: "capability.switch", multiple: false
 	}    
     section("Select zone to control, Zone 1 for single switch device..."){
-		input name: "zone", title: "Zone to control?", metadata: [values: ["1","2","3","4"]], type: "enum"
+		input name: "zone", title: "Zone to control?", multiple: false, metadata: [values: ['1','2','3','4','5','6','7','8','9','10','11','12','13','14','15','16']], type: "enum"
 	}    
-    section("Select moisture sensor to read..."){
+    section("Select Spruce moisture sensor"){
 		input name: "sensor", value: "humidity", type: "capability.relativeHumidityMeasurement", multiple: false, required: false 
 	}	
-    section("Automatic turn on?") {
+    section("Automatic turn on") {
 		input name: "sensorlowon", title: "Turn On when sensor is low?", type: "bool"
 	}
-    section("Or start at?") {
-		input name: "startTime", title: "Turn On Time?", type: "time", required: false
+    section("Run daily (optional)") {
+		input name: "startTime", title: "At what time?", type: "time", required: false
 	}
-    section("Set low moisture?") {
+    section("Set low moisture") {
 		input "low", "number", title: "Turn On When Moisture is below?"
 	}        
-	section("Turn on water for how many minutes?") {
+	section("Water for how many minutes?") {
 		input name: "duration", title: "Duration?", type: "number"
 	}
-    section("Or Automatic turn off?") {
+    section("Automatic turn off") {
 		input name: "sensorhighoff", title: "Turn Off when sensor reaches?", type: "bool"
 	}
-    section("Set high moisture?") {
+    section("Set high moisture") {
 		input "high", "number", title: "Turn Off When Moisture is above?"
 	}
-       
-    
+
+	section('Pause Control Contacts & Switches') {
+    	paragraph('Selecting contacts or control switches is optional. When a selected contact sensor is open or closed, or a switch is ' +
+                  'toggled, water immediately stops and will not resume until all of the contact sensors are closed and all of ' +
+                  'the switches are reset.\n\nCaution: if all contacts or switches are left in the stop state, the dependent ' +
+                  'schedule(s) will never run.')
+        input(name: 'contacts', title: 'Select water delay contact sensors', type: 'capability.contactSensor', multiple: true, 
+            required: false, submitOnChange: true)        
+		if (contacts)
+			input(name: 'contactStop', title: 'Stop watering when sensors are...', type: 'enum', required: (settings.contacts != null), 
+				options: ['open', 'closed'], defaultValue: 'open')
+		input(name: 'toggles', title: 'Select water delay switches', type: 'capability.switch', multiple: true, required: false, 
+			submitOnChange: true)
+		if (toggles) 
+			input(name: 'toggleStop', title: 'Stop watering when switches are...', type: 'enum', 
+				required: (settings.toggles != null), options: ['on', 'off'], defaultValue: 'off')
+		input(name: 'contactDelay', type: 'number', title: 'Restart watering how many seconds after all contacts and switches ' +
+				'are reset? (minimum 10s)', defaultValue: '10', required: false)
+	}
 }
 
 def installed() {
 	log.debug "Installed with settings: ${settings}"
-	unschedule()
-    unsubscribe()
     initialize()    
 }
 
-def updated(settings) {
-	unschedule()
-    unsubscribe()
+def updated() {
+	log.debug "Updated with settings: ${settings}"
     initialize()	             
 }
 
 def initialize(){
-	log.debug startTime    
+	if (atomicState.run == null)	 atomicState.run = false
+	if (atomicState.delayed == null) atomicState.delayed = false
+	if (atomicState.paused == null)	 atomicState.paused = false
+	
+	unschedule()
+    unsubscribe()
+	subscribe(app, appTouch)
+	
+	log.debug "${app.label}: ${startTime}, ${low}, ${high}"
     
-    if(startTime != null){		//if time is set, schedule every day
+	if (low >= high) log.error "Low must be less than High"
+	
+    if (startTime != null) {		//if time is set, schedule every day
     	def runTime = timeToday(startTime, location.timeZone)
-        schedule(runTime, startWater)   		        
-        }
-	if(sensorlowon) subscribe(sensor, "humidity", humidityHandler)	//if sensor low setpoint is on, subscribe to sensor    
+        schedule(runTime, startWatering)   		        
+    }
+	if (sensorlowon) subscribe(sensor, "humidity", humidityHandler)	//if sensor low setpoint is on, subscribe to sensor    
+}
+
+// enable the "Play" button in SmartApp list
+def appTouch(evt) {
+	startWatering()
 }
 
 //called whenever sensor reports value
-def humidityHandler(evt){
+def humidityHandler(evt){ 
+    def soil = sensor.currentHumidity    
+	log.debug "Soil Moisture is ${soil}% (${evt.value})"
     
-    def soil = sensor.latestValue("humidity")    
-    
-    log.debug "Soil Moisture = $soil %"
-    
-    if (soil <= low && sensorlowon) startWater()
-    if (soil >= high && sensorhighoff) stopWater()
-    
+    if ((soil < low) && sensorlowon) startWatering()
+    else if ((soil >= high) && sensorhighoff && (atomicState.run || atomicState.delayed)) stopWatering()
 }
 
-//starts water
-def startWater() {
-	log.debug "start water"
-    if (sensorhighoff) subscribe(sensor,"humidity",humidityHandler)    
-    
-    runIn(duration * 60, stopWater)    //sets off time
-    switchOn(zone)
-    switches.notify("moisture", "${app.name} turning ${zone} on")    
-}
-
-def stopWater() {
-	if(!sensorlowon)unsubscribe()
-    
-    switchOff(zone)
-    switches.notify("moisture", "${app.name} turning ${zone} off")
-}
-
-private switchOn(zone){    
-    log.debug "Turning $zone on"    
-    
-    if(zone=="1") switches.z1on()
-    else if(zone=="2") switches.z2on()    
-    else if(zone=="3") switches.z3on()
-    else if(zone=="4") switches.z4on()
+def startWatering() {
+    if (atomicState.run || atomicState.delayed) return	// don't start this twice
+	if (sensor.currentHumidity >= high) return	// already there - don't need more water right now
 	
+	// Is the controller busy?
+	if ((controller.currentSwitch == 'off') && (controller.currentStatus != 'pause')) {
+		atomicState.run = true
+		if (isWaterPaused()) {
+			log.debug "watering paused"
+			subWaterUnpause()
+			// controller.programWait()
+			// controller.notify('pause', "foo")
+		}
+		else {
+    		log.debug "start watering"
+			controller.programOn()
+			if (sensorhighoff) subscribe(sensor, "humidity", humidityHandler) 
+			subWaterPause()
+    		subscribe(controller, "switch${zone}.z${zone}off", zoneOffHandler)		// watch for zone being manually turned off
+			controller."z${zone}on"()
+			atomicState.startTime = now()
+			atomicState.pauseSecs = 0
+			runIn(duration * 60, stopWater)    //sets off time
+			String s = ''
+			if (duration > 1) s = 's'
+			controller.notify("active", "${app.label}: Zone ${zone} turned on for ${duration} min${s}")
+		}
+	}
+	else {
+		log.debug "controller busy, watering delayed (${controller.currentSwitch}, ${controller.currentStatus})"
+		atomicState.delayed = true
+		subscribe(controller, "switch.off", endDelay)
+	}
 }
 
+def endDelay(evt) {
+	unsubscribe(controller)
+	atomicState.delayed = false
+	Random rand = new Random() 						// just in case there are multiple schedules waiting on the same controller
+	int randomSeconds = rand.nextInt(120) + 15
+    runIn(randomSeconds, startWatering)	
+}
+							  
+def stopWatering() {
+	unsubscribe()
+    if (sensorlowon) subscribe(sensor, "humidity", humidityHandler)
+	atomicState.delayed = false
+	if (atomicState.run) {
+		atomicState.run = false
+		controller."z${zone}off"()
+		controller.notify("finished", "${app.label}: Zone ${zone} turned off")
+		controller.programEnd()
+	}
+}
 
-private switchOff(zone){
-	log.debug "Turning $zone off"
-    
-	if(zone=="1") switches.z1off()    
-    else if(zone=="2") switches.z2off()    
-    else if(zone=="3") switches.z3off()
-    else if(zone=="4") switches.z4off()
-     
+def zoneOffHandler(evt) {
+	atomicState.run = false
+	unsubscribe(controller)
+	unsubWaterPausers()
+	controller.notify("finished", "${app.label}: Zone ${zone} was manually turned off")
+	controller.programEnd()
+}
+
+// true if one of the stoppers is in Stop state
+private boolean isWaterPaused() {
+	if (settings.contacts && settings.contacts.currentContact.contains(settings.contactStop)) return true
+	if (settings.toggles && settings.toggles.currentSwitch.contains(settings.toggleStop)) return true
+	return false
+}
+
+// watch for water stoppers
+private def subWaterPause() {
+	if (settings.contacts) {
+		unsubscribe(settings.contacts)
+		subscribe(settings.contacts, "contact.${settings.contactStop}", waterPause)
+	}
+	if (settings.toggles) {
+		unsubscribe(settings.toggles)
+		subscribe(settings.toggles, "switch.${settings.toggleStop}", waterPause)
+	}
+}
+
+// watch for water starters
+private def subWaterUnpause() {
+	if (settings.contacts) {
+		unsubscribe(settings.contacts)
+		def cond = (settings.contactStop == 'open') ? 'closed' : 'open'
+		subscribe(settings.contacts, "contact.${cond}", waterUnpause)
+	}
+	if (settings.toggles) {
+		unsubscribe(settings.toggles)
+		def cond = (settings.toggleStop == 'on') ? 'off' : 'on'
+		subscribe(settings.toggles, "switch.${cond}", waterUnpause)
+	}
+}
+
+// stop watching water stoppers and starters
+private def unsubWaterPausers() {
+	if (settings.contacts) 	unsubscribe(settings.contacts)
+	if (settings.toggles) 	unsubscribe(settings.toggles)
+}
+
+// which of the stoppers are in stop mode?
+private String getWaterPauseList() {
+	String deviceList = ''
+	int i = 1
+	if (settings.contacts) {
+		settings.contacts.each {
+			if (it.currentContact == settings.contactStop) {
+				if (i > 1) deviceList += ', '
+				deviceList = "${deviceList}${it.displayName} is ${settings.contactStop}"
+				i++
+			}
+		}
+	}
+	if (settings.toggles) {
+		settings.toggles.each {
+			if (it.currentSwitch == settings.toggleStop) {
+				if (i > 1) deviceList += ', '
+				deviceList = "${deviceList}${it.displayName} is ${settings.toggleStop}"
+				i++
+			}
+		}
+	}
+	return deviceList
+}
+
+def restartWatering() {
+	if (!isWaterPaused()) {					// make sure we weren't paused while we were waiting to run
+		atomicState.paused = false
+		atomicState.pauseSecs += Math.round((now() - state.pauseTime) / 1000)
+		state.pauseTime = null
+		log.debug "restart watering"
+		controller.programOn()
+		if (sensorhighoff) subscribe(sensor, "humidity", humidityHandler)    	
+    	subscribe(controller, "switch${zone}.z${zone}off", zoneOffHandler)		// watch for zone being manually turned off
+		controller."z${zone}on"()
+		def secsLeft = atomicState.timeRemaining
+		if (secsLeft < 10) secsLeft = 10
+		runIn(secsLeft, stopWater)    //sets off time
+		String s = ''
+		if (secsLeft > 1) s = 's'
+		controller.notify("active", "${app.label}: Zone ${zone} unpaused for ${secsLeft} more sec${s}")
+	}
+}				  
+							  
+// handle end of pause session     
+def waterUnpause(evt){
+	if (!isWaterPaused()){ 					// only if ALL of the selected contacts are not open
+		def cDelay = 10
+        if (settings.contactDelay > 10) cDelay = settings.contactDelay
+        runIn(cDelay, restartWatering)
+		
+		// unsubscribe(settings.controller)
+		subWaterPause()							// allow stopping again while we wait for cycleOn to start
+		
+		log.debug "waterUnpause(): enabling device is ${evt.device} ${evt.value}"
+		
+		String cond = evt.value
+		switch (cond) {
+			case 'open':
+				cond = 'opened'
+				break
+			case 'on':
+				cond = 'switched on'
+				break
+			case 'off':
+				cond = 'switched off'
+				break
+			//case 'closed':
+			//	cond = 'closed'
+			//	break
+			case null:
+				cond = '????'
+				break
+			default:
+				break
+		}
+        controller.notify('pause', "${app.label}: ${evt.displayName} ${cond}, watering in ${cDelay} seconds")
+	} 
+	else {
+		log.debug "waterUnpause(): one down - ${evt.displayName}"
+	}
+}
+							  
+// handle start of pause session
+def waterPause(evt){
+	log.debug "waterStop: ${evt.displayName}"
+	
+	unschedule(startWatering)			// in case we got stopped again before we restart watering
+	unschedule(restartWatering)
+	unschedule(stopWatering)
+	
+	unsubscribe(settings.controller)	// so we can turn off the zone without ending the program
+	subWaterUnpause()
+	atomicState.paused = true
+		
+	if (!state.pauseTime) {				// only need to do this for the first event if multiple waterStoppers
+	    state.pauseTime = now()			// figure out how much time is left
+		atomicState.timeRemaining = (duration * 60) - Math.round(((now() - automicState.startTime) / 1000) - atomicState.pauseSecs)
+		
+		String cond = evt.value
+		switch (cond) {
+			case 'open':
+				cond = 'opened'
+				break
+			case 'on':
+				cond = 'switched on'
+				break
+			case 'off':
+				cond = 'switched off'
+				break
+			//case 'closed':
+			//	cond = 'closed'
+			//	break
+			case null:
+				cond = '????'
+				break
+			default:
+				break
+		}
+	    controller.notify('pause', "${app.label}: Watering paused - ${evt.displayName} ${cond}") // set to Paused
+	}
+	
+	if ( controller.currentValue("switch${zone}") != "z${zone}off" ) {
+		runIn(30, subOff)
+		controller."z${zone}off"()								// stop the water
+	}
+	else 
+		subscribe(controller, "switch${zone}.z${zone}off", zoneOffHandler) // allow manual off while paused
+}
+							  
+// This is a hack to work around the delay in response from the controller to the above programOff command...
+// We frequently see the off notification coming a long time after the command is issued, so we try to catch that so that
+// we don't prematurely exit the cycle.
+def subOff() {
+	subscribe(controller, "switch${zone}.z${zone}off", zoneOffHandler)
 }
