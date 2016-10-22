@@ -24,33 +24,33 @@ definition(
     oauth: false)
 
 preferences {
-	section("Select Spruce Controller or switch") {
-		input name: "controller", type: "capability.switch", multiple: false
-	}    
-    section("Select zone to control, Zone 1 for single switch device..."){
-		input name: "zone", title: "Zone to control?", multiple: false, metadata: [values: ['1','2','3','4','5','6','7','8','9','10','11','12','13','14','15','16']], type: "enum"
-	}    
-    section("Select Spruce moisture sensor"){
-		input name: "sensor", value: "humidity", type: "capability.relativeHumidityMeasurement", multiple: false, required: false 
-	}	
-    section("Automatic turn on") {
-		input name: "sensorlowon", title: "Turn On when sensor is low?", type: "bool"
+	section('Spruce Smart Zone Settings') {
+    	label(title: 'Smart Zone Name:', description: 'Name this schedule', required: false)
+		input('controller', 'capability.switch', title: 'Spruce Irrigation Controller:', description: 'Select a Spruce controller',
+			required: true, multiple: false)
+		}        
+
+	section('Program Scheduling'){
+       input('enable', 'bool', title: 'Enable watering:', defaultValue: 'true', metadata: [values: ['true', 'false']])
+       input('startTime', 'time', title: 'Daily Watering time (optional)', required: false)            
 	}
-    section("Run daily (optional)") {
-		input name: "startTime", title: "At what time?", type: "time", required: false
-	}
-    section("Set low moisture") {
-		input "low", "number", title: "Turn On When Moisture is below?"
-	}        
-	section("Water for how many minutes?") {
-		input name: "duration", title: "Duration?", type: "number"
-	}
-    section("Automatic turn off") {
-		input name: "sensorhighoff", title: "Turn Off when sensor reaches?", type: "bool"
-	}
-    section("Set high moisture") {
-		input "high", "number", title: "Turn Off When Moisture is above?"
-	}
+	    
+    section(''){
+		paragraph(image: 'http://www.plaidsystems.com/smartthings/st_flowers_225_r.png',             
+            title: 'Zone Control', 'Select the zone you want to control')
+			input(name: "zone", title: "Zone Number", multiple: false, 
+				metadata: [values: ['1','2','3','4','5','6','7','8','9','10','11','12','13','14','15','16']], type: "enum")
+		paragraph(image: 'http://www.plaidsystems.com/smartthings/st_sensor_200_r.png',
+        	title: 'Moisture Sensor Setup', 'Select a Spruce sensor to monitor and control watering.')
+        	input("sensor", 'capability.relativeHumidityMeasurement', title: 'Select moisture sensor?', value: "humidity", 
+				required: true, multiple: false)
+			input("sensorlowon", title: "Turn On when sensor is below?", type: "bool", defaultValue: true, submitOnChange: true)
+			if (sensorlowon) input("low", 'number', title: "Minimum moisture target", range: "10..60", defaultValue: 30, required: true,
+								submitOnChange: true)
+			input("sensorhighoff", title: "Turn Off when sensor is above?", type: "bool", defaultValue: true, submitOnChange: true)
+			if (sensorhighoff) input("high", "number", title: "Maximum moisture target", range: "${low}..60", defaultValue: 35)
+        paragraph(image: 'http://www.plaidsystems.com/smartthings/st_timer.png', title: 'Maximum Watering Tiome', '')
+			input(name: "duration", title: "Duration?", type: "number", range: "1..60")
 
 	section(''){
     	paragraph(image: 'http://www.plaidsystems.com/smartthings/st_pause.png',
