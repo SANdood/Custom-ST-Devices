@@ -7,7 +7,11 @@
  *		zone events: switch1.z1off, switch2.z2off, switch3.z3off, ...		// up to 16 - allows for manual zone shutoff
  *  	
  */
-
+// TODO:
+// Validate Pause support
+// Enable/Disable
+// CLean up UI
+//
 definition(
     name: "Spruce Smart Zone",
     namespace: "plaidsystems",
@@ -48,11 +52,13 @@ preferences {
 		input "high", "number", title: "Turn Off When Moisture is above?"
 	}
 
-	section('Pause Control Contacts & Switches') {
-    	paragraph('Selecting contacts or control switches is optional. When a selected contact sensor is open or closed, or a switch is ' +
-                  'toggled, water immediately stops and will not resume until all of the contact sensors are closed and all of ' +
-                  'the switches are reset.\n\nCaution: if all contacts or switches are left in the stop state, the dependent ' +
-                  'schedule(s) will never run.')
+	section(''){
+    	paragraph(image: 'http://www.plaidsystems.com/smartthings/st_pause.png',
+        	title: 'Pause Control Contacts & Switches', required: false,
+           	'Selecting contacts or control switches is optional. When a selected contact sensor is opened or closed, or a switch is ' +
+            'toggled, watering immediately stops and will not resume until all of the contact sensors and ' +
+            'switches are reset.\n\nCaution: if all contacts or switches are left in the stop state, the dependent ' +
+            'schedule(s) will never run.')
         input(name: 'contacts', title: 'Select water delay contact sensors', type: 'capability.contactSensor', multiple: true, 
             required: false, submitOnChange: true)        
 		if (contacts)
@@ -66,6 +72,14 @@ preferences {
 		input(name: 'contactDelay', type: 'number', title: 'Restart watering how many seconds after all contacts and switches ' +
 				'are reset? (minimum 10s)', defaultValue: '10', required: false)
 	}
+	section(''){
+    	paragraph(image: 'http://www.plaidsystems.com/smartthings/st_spruce_controller_250.png',
+        	title: 'Controller Sync', required: false,
+            'For multiple controllers only.  This schedule will wait for the selected controller to finish before ' +
+            'starting. Do not set with a single controller!')
+       	input(name: 'sync', type: 'capability.switch', title: 'Select Master Controller', 
+			  description: 'Only use this setting with multiple controllers', required: false, multiple: false)
+    }
 }
 
 def installed() {
@@ -112,39 +126,56 @@ def humidityHandler(evt){
     else if ((soil >= high) && sensorhighoff && (atomicState.run || atomicState.delayed)) stopWatering()
 }
 
+// called to start watering cycle
 def startWatering() {
     if (atomicState.run || atomicState.delayed) return	// don't start this twice
 	if (sensor.currentHumidity >= high) return	// already there - don't need more water right now
 	
 	// Is the controller busy?
-	if ((controller.currentSwitch == 'off') && (controller.currentStatus != 'pause')) {
-		atomicState.run = true
-		if (isWaterPaused()) {
-			log.debug "watering paused"
-			subWaterUnpause()
-			// controller.programWait()
-			// controller.notify('pause', "foo")
-		}
-		else {
-    		log.debug "start watering"
-			controller.programOn()
-			if (sensorhighoff) subscribe(sensor, "humidity", humidityHandler) 
-			subWaterPause()
-    		subscribe(controller, "switch${zone}.z${zone}off", zoneOffHandler)		// watch for zone being manually turned off
-			controller."z${zone}on"()
-			atomicState.startTime = now()
-			atomicState.pauseSecs = 0
-			runIn(duration * 60, stopWater)    //sets off time
-			String s = ''
-			if (duration > 1) s = 's'
-			controller.notify("active", "${app.label}: Zone ${zone} turned on for ${duration} min${s}")
-		}
-	}
-	else {
-		log.debug "controller busy, watering delayed (${controller.currentSwitch}, ${controller.currentStatus})"
+	if ((controller.currentSwitch != 'off') || (controller.currentStatus == 'pause')) {
+		log.debug "watering delayed, ${controller.displayName} busy"
 		atomicState.delayed = true
 		subscribe(controller, "switch.off", endDelay)
+		// we don't change the status so that we don't disrupt the running schedule (since we aren't in control yet)
+		controller.notify(controller.currentStatus, "${app.label}: Waiting for current schedule to complete")
+		return
 	}
+	
+	// Is the sync controller busy?
+	if (settings.sync) {
+		if ((settings.sync.currentSwitch != 'off') || settings.sync.currentStatus == 'pause') {
+			log.debug "watering sync delayed, ${sync.displayName} busy"
+           	subscribe(settings.sync, 'switch.off', syncOn)
+			controller.notify('delayed', "${app.label}: Waiting for ${settings.sync.displayName} to complete")
+			return
+		}
+	}
+
+	// looks like we are good to go
+	atomicState.run = true
+	
+	if (isWaterPaused()) {
+		// we have to check this first, in case a pause was effected while no other schedule was running
+		String pauseList = getWaterPauseList()
+		log.debug "watering paused, ${pauseList}"
+		subWaterUnpause()
+		controller.programWait()	// Make sure that the status reflects that we are waiting
+		controller.notify('pause', "${app.label}: Watering paused, ${pauseList}")
+		return
+	}
+
+	log.debug "watering starting"
+	controller.programOn()
+	if (sensorhighoff) subscribe(sensor, "humidity", humidityHandler) 
+	subWaterPause()
+    subscribe(controller, "switch${zone}.z${zone}off", zoneOffHandler)		// watch for zone being manually turned off
+	controller."z${zone}on"()
+	atomicState.startTime = now()
+	atomicState.pauseSecs = 0
+	runIn(duration * 60, stopWater)    //sets off time
+	String s = ''
+	if (duration > 1) s = 's'
+	controller.notify("active", "${app.label}: Zone ${zone} turned on for ${duration} min${s}")
 }
 
 def endDelay(evt) {
@@ -239,24 +270,27 @@ private String getWaterPauseList() {
 	return deviceList
 }
 
+// called after a pause to continue the interrupted watering session
 def restartWatering() {
 	if (!isWaterPaused()) {					// make sure we weren't paused while we were waiting to run
 		atomicState.paused = false
 		atomicState.pauseSecs += Math.round((now() - state.pauseTime) / 1000)
-		state.pauseTime = null
+		atomicState.pauseTime = null
+		
 		log.debug "restart watering"
 		controller.programOn()
 		if (sensorhighoff) subscribe(sensor, "humidity", humidityHandler)    	
     	subscribe(controller, "switch${zone}.z${zone}off", zoneOffHandler)		// watch for zone being manually turned off
 		controller."z${zone}on"()
+		
 		def secsLeft = atomicState.timeRemaining
 		if (secsLeft < 10) secsLeft = 10
-		runIn(secsLeft, stopWater)    //sets off time
+		runIn(secsLeft, stopWatering)    //sets off time
 		String s = ''
 		if (secsLeft > 1) s = 's'
 		controller.notify("active", "${app.label}: Zone ${zone} unpaused for ${secsLeft} more sec${s}")
 	}
-}				  
+}
 							  
 // handle end of pause session     
 def waterUnpause(evt){
@@ -300,17 +334,16 @@ def waterUnpause(evt){
 // handle start of pause session
 def waterPause(evt){
 	log.debug "waterStop: ${evt.displayName}"
-	
-	unschedule(startWatering)			// in case we got stopped again before we restart watering
-	unschedule(restartWatering)
-	unschedule(stopWatering)
-	
-	unsubscribe(settings.controller)	// so we can turn off the zone without ending the program
-	subWaterUnpause()
-	atomicState.paused = true
-		
-	if (!state.pauseTime) {				// only need to do this for the first event if multiple waterStoppers
-	    state.pauseTime = now()			// figure out how much time is left
+
+	if (!atomicState.paused) {
+		unsubscribe(settings.controller)	// so we can turn off the zone without ending the program
+		unschedule(startWatering)			// in case we got stopped again before we restart watering
+		unschedule(restartWatering)
+		unschedule(stopWatering)
+
+		subWaterUnpause()
+		atomicState.paused = true
+		atomicState.pauseTime = now()			// figure out how much time is left
 		atomicState.timeRemaining = (duration * 60) - Math.round(((now() - automicState.startTime) / 1000) - atomicState.pauseSecs)
 		
 		String cond = evt.value
@@ -349,4 +382,15 @@ def waterPause(evt){
 // we don't prematurely exit the cycle.
 def subOff() {
 	subscribe(controller, "switch${zone}.z${zone}off", zoneOffHandler)
+}
+
+def syncOn(evt){
+	// double check that the switch is actually finished and not just paused
+	if ((settings.sync.currentSwitch == 'off') && (settings.sync.currentStatus != 'pause')) {
+		unsubscribe(settings.sync)
+    	Random rand = new Random() 						// just in case there are multiple schedules waiting on the same controller
+		int randomSeconds = rand.nextInt(120) + 15
+    	runIn(randomSeconds, waterStart)					// no message so we don't clog the system
+    	controller.notify('schedule', "${app.label}: ${settings.sync} finished, starting in ${randomSeconds} seconds")
+	} // else, it is just pausing...keep waiting for the next "off"
 }
