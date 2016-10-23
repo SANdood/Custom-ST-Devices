@@ -125,8 +125,8 @@ def appTouch(evt) {
 //called whenever sensor reports humidity value
 def humidityHandler(evt){ 
 	log.debug "Soil Moisture is ${evt.value}%"   
-    if (evt.value < low) startWatering()
-    else if ( high && (evt.value >= high) && (atomicState.run || atomicState.delayed || atomicState.paused)) stopWatering()
+    if (evt.numberValue < low) startWatering()
+    else if ( high && (evt.numberValue >= high) && (atomicState.run || atomicState.delayed || atomicState.paused)) stopWatering()
 }
 
 // called to start watering cycle
