@@ -109,11 +109,11 @@ def initialize(){
 	
 	log.debug "${app.label}: ${startTime}, ${low}, ${high}"
 	
-    if (enabled && (startTime != null)) {		//if time is set, schedule every day
+    if (enable && (startTime != null)) {		//if time is set, schedule every day
     	def runTime = timeToday(startTime, location.timeZone)
         schedule(runTime, startWatering)   		        
     }
-	if (enabled) subscribe(sensor, "humidity", humidityHandler)
+	if (enable) subscribe(sensor, "humidity", humidityHandler)
 }
 
 // enable the "Play" button in SmartApp list
@@ -193,7 +193,7 @@ def endDelay(evt) {
 							  
 def stopWatering() {
 	unsubscribe()
-    if (enabled) subscribe(sensor, "humidity", humidityHandler)
+    if (enable) subscribe(sensor, "humidity", humidityHandler)
 	atomicState.delayed = false
 	atomicState.paused = false
 	if (atomicState.run) {
