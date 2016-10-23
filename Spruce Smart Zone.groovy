@@ -9,8 +9,6 @@
  */
 // TODO:
 // Validate Pause support
-// Enable/Disable
-// CLean up UI
 //
 definition(
     name: "Spruce Smart Zone",
@@ -24,62 +22,70 @@ definition(
     oauth: false)
 
 preferences {
-	section('Spruce Smart Zone Settings') {
-    	label(title: 'Smart Zone Name:', description: 'Name this schedule', required: false)
-		input('controller', 'capability.switch', title: 'Spruce Irrigation Controller:', description: 'Select a Spruce controller',
-			required: true, multiple: false)
-		}        
+	page(name: 'startPage')
+}
 
-	section('Program Scheduling'){
-       input('enable', 'bool', title: 'Enable watering:', defaultValue: 'true', metadata: [values: ['true', 'false']])
-       input('startTime', 'time', title: 'Daily Watering time (optional)', required: false)            
-	}
+def startPage() {
+	dynamicPage(name: 'startPage', title: 'Spruce Smart Zone setup V1.00', install: true, uninstall: true) {
+		section('') {
+            paragraph(image: 'http://www.plaidsystems.com/smartthings/st_settings.png', 
+					  title: 'Smart Zone settings', '')
+    		label(title: 'Smart Zone Name:', description: 'Name this schedule', required: false)
+			input('controller', 'capability.switch', title: 'Spruce Irrigation Controller:', description: 'Select a Spruce controller',
+				required: true, multiple: false)
+       		input('enable', 'bool', title: 'Enable watering:', defaultValue: 'true', metadata: [values: ['true', 'false']])
+       		input('startTime', 'time', title: 'Daily Watering time (optional)', required: false)            
+		}
 	    
-    section(''){
-		paragraph(image: 'http://www.plaidsystems.com/smartthings/st_flowers_225_r.png',             
-            title: 'Zone Control', 'Select the zone you want to control')
+   	 	section('') {
+			paragraph(image: 'http://www.plaidsystems.com/smartthings/st_flowers_225_r.png', title: 'Smart Zone Control', '')
 			input(name: "zone", title: "Zone Number", multiple: false, 
 				metadata: [values: ['1','2','3','4','5','6','7','8','9','10','11','12','13','14','15','16']], type: "enum")
-		paragraph(image: 'http://www.plaidsystems.com/smartthings/st_sensor_200_r.png',
-        	title: 'Moisture Sensor Setup', 'Select a Spruce sensor to monitor and control watering.')
-        	input("sensor", 'capability.relativeHumidityMeasurement', title: 'Select moisture sensor?', value: "humidity", 
+		}
+		
+		section('') {
+			paragraph(image: 'http://www.plaidsystems.com/smartthings/st_sensor_200_r.png', title: 'Moisture Sensor Setup', '')
+        	input("sensor", 'capability.relativeHumidityMeasurement', title: 'Spruce Moisture Sensor', value: "humidity", 
 				required: true, multiple: false)
-			input("sensorlowon", title: "Turn On when sensor is below?", type: "bool", defaultValue: true, submitOnChange: true)
-			if (sensorlowon) input("low", 'number', title: "Minimum moisture target", range: "10..60", defaultValue: 30, required: true,
-								submitOnChange: true)
-			input("sensorhighoff", title: "Turn Off when sensor is above?", type: "bool", defaultValue: true, submitOnChange: true)
-			if (sensorhighoff) input("high", "number", title: "Maximum moisture target", range: "${low}..60", defaultValue: 35)
-        paragraph(image: 'http://www.plaidsystems.com/smartthings/st_timer.png', title: 'Maximum Watering Tiome', '')
+			input(name: "low", title: "Turn On when moisture is below", type: 'number', range: "10..60",
+				required: true, submitOnChange: true)
+			input(name: "high", type: "number", title: "Turn Off when mositure reaches", range: "${low}..60", required: false)
+		}
+		
+		section('') {
+        	paragraph(image: 'http://www.plaidsystems.com/smartthings/st_timer.png', title: 'Maximum Watering Duration\n(1-60 minutes)', '')
 			input(name: "duration", title: "Duration?", type: "number", range: "1..60")
-
-	section(''){
-    	paragraph(image: 'http://www.plaidsystems.com/smartthings/st_pause.png',
-        	title: 'Pause Control Contacts & Switches', required: false,
-           	'Selecting contacts or control switches is optional. When a selected contact sensor is opened or closed, or a switch is ' +
-            'toggled, watering immediately stops and will not resume until all of the contact sensors and ' +
-            'switches are reset.\n\nCaution: if all contacts or switches are left in the stop state, the dependent ' +
-            'schedule(s) will never run.')
-        input(name: 'contacts', title: 'Select water delay contact sensors', type: 'capability.contactSensor', multiple: true, 
-            required: false, submitOnChange: true)        
-		if (contacts)
-			input(name: 'contactStop', title: 'Stop watering when sensors are...', type: 'enum', required: (settings.contacts != null), 
-				options: ['open', 'closed'], defaultValue: 'open')
-		input(name: 'toggles', title: 'Select water delay switches', type: 'capability.switch', multiple: true, required: false, 
-			submitOnChange: true)
-		if (toggles) 
-			input(name: 'toggleStop', title: 'Stop watering when switches are...', type: 'enum', 
-				required: (settings.toggles != null), options: ['on', 'off'], defaultValue: 'off')
-		input(name: 'contactDelay', type: 'number', title: 'Restart watering how many seconds after all contacts and switches ' +
+		}
+	
+		section(''){
+    		paragraph(image: 'http://www.plaidsystems.com/smartthings/st_pause.png', title: 'Pause Control Contacts & Switches (optional)',
+           		'When any selected contact sensor is opened or closed, or any selected switch is ' +
+            	'toggled, watering immediately stops and will not resume until all of the contact sensors and ' +
+            	'switches are reset.\n\nCaution: if all contacts or switches are left in the stop state, the dependent ' +
+            	'schedule(s) will never run.')
+        	input(name: 'contacts', title: 'Pause watering contact sensors', type: 'capability.contactSensor', multiple: true, 
+            	required: false, submitOnChange: true)        
+			if (contacts)
+				input(name: 'contactStop', title: 'Pause watering when sensors are...', type: 'enum', required: (settings.contacts != null), 
+					options: ['open', 'closed'], defaultValue: 'open')
+			input(name: 'toggles', title: 'Pause watering switches', type: 'capability.switch', multiple: true, required: false, 
+				submitOnChange: true)
+			if (toggles) 
+				input(name: 'toggleStop', title: 'Pause watering when switches are...', type: 'enum', 
+					required: (settings.toggles != null), options: ['on', 'off'], defaultValue: 'off')
+			input(name: 'contactDelay', type: 'number', title: 'Restart watering how many seconds after all contacts and switches ' +
 				'are reset? (minimum 10s)', defaultValue: '10', required: false)
+		}
+		
+		section(''){
+    		paragraph(image: 'http://www.plaidsystems.com/smartthings/st_spruce_controller_250.png',
+        		title: 'Controller Synchronization', required: false,
+            	'For multiple controllers only.  This schedule will wait for the selected controller to finish before ' +
+            	'starting. Do not set with a single controller!')
+       		input(name: 'sync', type: 'capability.switch', title: 'Monitored Spruce Controller', 
+				description: 'Only use this setting with multiple controllers', required: false, multiple: false)
+		}
 	}
-	section(''){
-    	paragraph(image: 'http://www.plaidsystems.com/smartthings/st_spruce_controller_250.png',
-        	title: 'Controller Sync', required: false,
-            'For multiple controllers only.  This schedule will wait for the selected controller to finish before ' +
-            'starting. Do not set with a single controller!')
-       	input(name: 'sync', type: 'capability.switch', title: 'Select Master Controller', 
-			  description: 'Only use this setting with multiple controllers', required: false, multiple: false)
-    }
 }
 
 def installed() {
@@ -93,43 +99,40 @@ def updated() {
 }
 
 def initialize(){
-	if (atomicState.run == null)	 atomicState.run = false
-	if (atomicState.delayed == null) atomicState.delayed = false
-	if (atomicState.paused == null)	 atomicState.paused = false
+	if (atomicState.run == null)	 atomicState.run = false			// true once we've started
+	if (atomicState.delayed == null) atomicState.delayed = false		// true if either this controller or sync controller is busy
+	if (atomicState.paused == null)	 atomicState.paused = false			// true if watering paused by contact/switch
 	
 	unschedule()
     unsubscribe()
 	subscribe(app, appTouch)
 	
 	log.debug "${app.label}: ${startTime}, ${low}, ${high}"
-    
-	if (low >= high) log.error "Low must be less than High"
 	
-    if (startTime != null) {		//if time is set, schedule every day
+    if (enabled && (startTime != null)) {		//if time is set, schedule every day
     	def runTime = timeToday(startTime, location.timeZone)
         schedule(runTime, startWatering)   		        
     }
-	if (sensorlowon) subscribe(sensor, "humidity", humidityHandler)	//if sensor low setpoint is on, subscribe to sensor    
+	if (enabled) subscribe(sensor, "humidity", humidityHandler)
 }
 
 // enable the "Play" button in SmartApp list
 def appTouch(evt) {
+	log.debug "appTouch"
 	startWatering()
 }
 
-//called whenever sensor reports value
+//called whenever sensor reports humidity value
 def humidityHandler(evt){ 
-    def soil = sensor.currentHumidity    
-	log.debug "Soil Moisture is ${soil}% (${evt.value})"
-    
-    if ((soil < low) && sensorlowon) startWatering()
-    else if ((soil >= high) && sensorhighoff && (atomicState.run || atomicState.delayed)) stopWatering()
+	log.debug "Soil Moisture is ${evt.value}%"   
+    if (evt.value < low) startWatering()
+    else if ( high && (evt.value >= high) && (atomicState.run || atomicState.delayed || atomicState.paused)) stopWatering()
 }
 
 // called to start watering cycle
 def startWatering() {
     if (atomicState.run || atomicState.delayed) return	// don't start this twice
-	if (sensor.currentHumidity >= high) return	// already there - don't need more water right now
+	if (sensor.currentHumidity > low) return	// don't need to water right now either
 	
 	// Is the controller busy?
 	if ((controller.currentSwitch != 'off') || (controller.currentStatus == 'pause')) {
@@ -145,6 +148,7 @@ def startWatering() {
 	if (settings.sync) {
 		if ((settings.sync.currentSwitch != 'off') || settings.sync.currentStatus == 'pause') {
 			log.debug "watering sync delayed, ${sync.displayName} busy"
+			atomicState.delayed = true
            	subscribe(settings.sync, 'switch.off', syncOn)
 			controller.notify('delayed', "${app.label}: Waiting for ${settings.sync.displayName} to complete")
 			return
@@ -166,18 +170,19 @@ def startWatering() {
 
 	log.debug "watering starting"
 	controller.programOn()
-	if (sensorhighoff) subscribe(sensor, "humidity", humidityHandler) 
+	if (high) subscribe(sensor, "humidity", humidityHandler) 
 	subWaterPause()
     subscribe(controller, "switch${zone}.z${zone}off", zoneOffHandler)		// watch for zone being manually turned off
 	controller."z${zone}on"()
 	atomicState.startTime = now()
 	atomicState.pauseSecs = 0
-	runIn(duration * 60, stopWater)    //sets off time
+	runIn(duration * 60, stopWatering)    //sets off time
 	String s = ''
 	if (duration > 1) s = 's'
 	controller.notify("active", "${app.label}: Zone ${zone} turned on for ${duration} min${s}")
 }
 
+// called when a running schedule turns off the controller 
 def endDelay(evt) {
 	unsubscribe(controller)
 	atomicState.delayed = false
@@ -188,8 +193,9 @@ def endDelay(evt) {
 							  
 def stopWatering() {
 	unsubscribe()
-    if (sensorlowon) subscribe(sensor, "humidity", humidityHandler)
+    if (enabled) subscribe(sensor, "humidity", humidityHandler)
 	atomicState.delayed = false
+	atomicState.paused = false
 	if (atomicState.run) {
 		atomicState.run = false
 		controller."z${zone}off"()
@@ -279,7 +285,7 @@ def restartWatering() {
 		
 		log.debug "restart watering"
 		controller.programOn()
-		if (sensorhighoff) subscribe(sensor, "humidity", humidityHandler)    	
+		if (high) subscribe(sensor, "humidity", humidityHandler)    	
     	subscribe(controller, "switch${zone}.z${zone}off", zoneOffHandler)		// watch for zone being manually turned off
 		controller."z${zone}on"()
 		
@@ -387,6 +393,7 @@ def subOff() {
 def syncOn(evt){
 	// double check that the switch is actually finished and not just paused
 	if ((settings.sync.currentSwitch == 'off') && (settings.sync.currentStatus != 'pause')) {
+		atomicState.delayed = false
 		unsubscribe(settings.sync)
     	Random rand = new Random() 						// just in case there are multiple schedules waiting on the same controller
 		int randomSeconds = rand.nextInt(120) + 15
