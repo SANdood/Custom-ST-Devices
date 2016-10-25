@@ -137,7 +137,7 @@ metadata {
             attributeState 'raintom', label: 'Rain Tomorrow', icon: 'http://www.plaidsystems.com/smartthings/st_rain.png', backgroundColor: '#d65fe3'
             attributeState 'donewweek', label: 'Finished', icon: 'st.Outdoor.outdoor5', backgroundColor: '#52c435'
             attributeState 'skipping', label: 'Skip', icon: 'st.Outdoor.outdoor20', backgroundColor: '#46c2e8'
-            attributeState 'moisture', label: 'Ready', icon: 'st.Weather.weather2', backgroundColor: '#36cfe3'
+            attributeState 'moisture', label: 'Ready', icon: 'st.Weather.weather2', backgroundColor: '#46c2e8'
             attributeState 'pause', label: 'PAUSE', icon: 'st.contact.contact.open', backgroundColor: '#f2a51f'
 			attributeState 'delayed', label: 'Delayed', icon: 'st.contact.contact.open', backgroundColor: '#f2a51f'
             attributeState 'active', label: 'Active', icon: 'st.Outdoor.outdoor12', backgroundColor: '#3DC72E'
