@@ -22,7 +22,7 @@ preferences {
 }
 
 def startPage() {
-	dynamicPage(name: 'startPage', title: 'Spruce Smart Zone setup V1.00', install: true, uninstall: true) {
+	dynamicPage(name: 'startPage', title: 'Spruce Smart Zone setup V1.01', install: true, uninstall: true) {
 		section('') {
             paragraph(image: 'http://www.plaidsystems.com/smartthings/st_settings.png', title: 'Smart Zone settings', required: false,
 					  '')
@@ -84,7 +84,13 @@ def startPage() {
             		  'starting. Do not set with a single controller!')
        		input(name: 'sync', type: 'capability.switch', title: 'Monitored Spruce Controller', 
 				description: 'Only use this setting with multiple controllers', required: false, multiple: false)
-		} 
+		 
+			paragraph(title: 'Push Notifications', required: false, '') 
+			input(name: 'notify', type: 'enum', title: 'Select what push notifications to receive.', required: false, 
+                	multiple: true, metadata: [values: ['Delays', 'Warnings', 'Events']])
+            input('recipients', 'contact', title: 'Send push notifications to', required: false, multiple: true)
+            input(name: 'logAll', type: 'bool', title: 'Log all notices to Hello Home?', defaultValue: 'false', options: ['true', 'false'])
+        } 
 	}
 }
 
@@ -109,11 +115,17 @@ def initialize(){
 	
 	log.debug "${app.label}: ${startTime}, ${low}, ${high}"
 	
+    String sched = ''
     if (enable && (startTime != null)) {		//if time is set, schedule every day
     	def runTime = timeToday(startTime, location.timeZone)
-        schedule(runTime, startWatering)   		        
+        schedule(runTime, startWatering)
+        sched = " Scheduled and"
     }
-	if (enable) subscribe(sensor, "humidity", humidityHandler)
+	if (enable) {
+    	subscribe(sensor, "humidity", humidityHandler)
+    	note('schedule', "${app.label}:${sched} Monitoring ${sensor.displayName}", 'e')
+    }
+    else note('disable', "${app.label}: Disabled", 'e')
 }
 
 // enable the "Play" button in SmartApp list
@@ -132,6 +144,15 @@ def humidityHandler(evt){
 // called to start watering cycle
 def startWatering() {
     if (atomicState.run || atomicState.delayed) return	// don't start this twice
+    if (!enable) return
+    
+    // make sure that the sensor has reported within the last 48 hours
+   	int hours = 48
+   	def yesterday = new Date(now() - (/* 1000 * 60 * 60 */ 3600000 * hours).toLong())  
+   	def lastHumDate = settings.sensor.latestState('humidity').date
+   	if (lastHumDate < yesterday)
+   		note('warning', "${app.label}: Please check sensor ${settings.sensor}, no humidity reports for ${hours}+ hours", 'w')
+
 	if (sensor.currentHumidity > low) return	// don't need to water right now either
 	
 	// Is the controller busy?
@@ -140,7 +161,7 @@ def startWatering() {
 		atomicState.delayed = true
 		subscribe(controller, "switch.off", endDelay)
 		// we don't change the status so that we don't disrupt the running schedule (since we aren't in control yet)
-		controller.notify(controller.currentStatus, "${app.label}: Waiting for current schedule to complete")
+		note('delayed', "${app.label}: Waiting for current schedule to complete", 'd')
 		return
 	}
 	
@@ -150,7 +171,7 @@ def startWatering() {
 			log.debug "watering sync delayed, ${sync.displayName} busy"
 			atomicState.delayed = true
            	subscribe(settings.sync, 'switch.off', syncOn)
-			controller.notify('delayed', "${app.label}: Waiting for ${settings.sync.displayName} to complete")
+			note('delayed', "${app.label}: Waiting for ${settings.sync.displayName} to complete", 'd')
 			return
 		}
 	}
@@ -164,7 +185,7 @@ def startWatering() {
 		log.debug "watering paused, ${pauseList}"
 		subWaterUnpause()
 		controller.programWait()	// Make sure that the status reflects that we are waiting
-		controller.notify('pause', "${app.label}: Watering paused, ${pauseList}")
+		note('pause', "${app.label}: Watering paused, ${pauseList}", 'd')
 		return
 	}
 
@@ -179,7 +200,7 @@ def startWatering() {
 	runIn(duration * 60, stopWatering)    //sets off time
 	String s = ''
 	if (duration > 1) s = 's'
-	controller.notify("active", "${app.label}: Zone ${zone} turned on for ${duration} min${s}")
+	note("active", "${app.label}: Zone ${zone} turned on for ${duration} min${s}", 'e')
 }
 
 // called when a running schedule turns off the controller 
@@ -199,7 +220,7 @@ def stopWatering() {
 	if (atomicState.run) {
 		atomicState.run = false
 		controller."z${zone}off"()
-		controller.notify("finished", "${app.label}: Zone ${zone} turned off")
+		note("finished", "${app.label}: Zone ${zone} turned off", 'e')
 		controller.programEnd()
 	}
 }
@@ -208,7 +229,7 @@ def zoneOffHandler(evt) {
 	atomicState.run = false
 	unsubscribe(controller)
 	unsubWaterPausers()
-	controller.notify("finished", "${app.label}: Zone ${zone} was manually turned off")
+	note("finished", "${app.label}: Zone ${zone} was manually turned off", 'e')
 	controller.programEnd()
 }
 
@@ -294,7 +315,7 @@ def restartWatering() {
 		runIn(secsLeft, stopWatering)    //sets off time
 		String s = ''
 		if (secsLeft > 1) s = 's'
-		controller.notify("active", "${app.label}: Zone ${zone} unpaused for ${secsLeft} more sec${s}")
+		note("active", "${app.label}: Zone ${zone} unpaused for ${secsLeft} more sec${s}", 'd')
 	}
 }
 							  
@@ -330,7 +351,7 @@ def waterUnpause(evt){
 			default:
 				break
 		}
-        controller.notify('pause', "${app.label}: ${evt.displayName} ${cond}, watering in ${cDelay} seconds")
+        note('pause', "${app.label}: ${evt.displayName} ${cond}, watering in ${cDelay} seconds", 'd')
 	} 
 	else {
 		log.debug "waterUnpause(): one down - ${evt.displayName}"
@@ -372,7 +393,7 @@ def waterPause(evt){
 			default:
 				break
 		}
-	    controller.notify('pause', "${app.label}: Watering paused - ${evt.displayName} ${cond}") // set to Paused
+	    note('pause', "${app.label}: Watering paused - ${evt.displayName} ${cond}", 'd') // set to Paused
 	}
 	
 	if ( controller.currentValue("switch${zone}") != "z${zone}off" ) {
@@ -398,6 +419,70 @@ def syncOn(evt){
     	Random rand = new Random() 						// just in case there are multiple schedules waiting on the same controller
 		int randomSeconds = rand.nextInt(120) + 15
     	runIn(randomSeconds, waterStart)					// no message so we don't clog the system
-    	controller.notify('schedule', "${app.label}: ${settings.sync} finished, starting in ${randomSeconds} seconds")
+    	note('schedule', "${app.label}: ${settings.sync} finished, starting in ${randomSeconds} seconds", 'd')
 	} // else, it is just pausing...keep waiting for the next "off"
+}
+
+//notifications to device, pushed if requested
+def note(String statStr, String msg, String msgType) {
+
+	// send to debug first (near-zero cost)
+	log.debug "${statStr}: ${msg}"
+
+	// notify user second (small cost)
+	boolean notifyController = true
+    if(settings.notify || settings.logAll) {
+    	String spruceMsg = "Spruce ${msg}"
+    	switch(msgType) {
+		case 'd':
+  				if (settings.notify && settings.notify.contains('Delays')) {
+      				sendIt(spruceMsg)
+      			}
+      			else if (settings.logAll) {
+      				sendNotificationEvent(spruceMsg)
+      			}
+      			break
+      		case 'e':
+      			if (settings.notify && settings.notify.contains('Events')) {
+      				sendIt(spruceMsg)
+      				//notifyController = false					// no need to notify controller unless we don't notify the user
+      			}
+      			else if (settings.logAll) {
+      				sendNotificationEvent(spruceMsg)
+      			}
+      			break
+      		case 'w':
+      			notifyController = false						// no need to notify the controller, ever
+      			if (settings.notify && settings.notify.contains('Warnings')) {
+      				sendIt(spruceMsg)
+      			} else
+      				sendNotificationEvent(spruceMsg)					// Special case - make sure this goes into the Hello Home log, if not notifying
+      			break
+      		default:
+      			break
+	  	}
+    }
+	// finally, send to controller DTH, to change the state and to log important stuff in the event log
+	if (notifyController) {		// do we really need to send these to the controller?
+		// only send status updates to the controller if WE are running, or nobody else is
+		if (atomicState.run || ((settings.controller.currentSwitch == 'off') && (settings.controller.currentStatus != 'pause'))) {
+    		settings.controller.notify(statStr, msg)
+
+		}	
+		else { // we aren't running, so we don't want to change the status of the controller
+			// send the event using the current status of the switch, so we don't change it 
+			//log.debug "note - direct sendEvent()"
+			settings.controller.notify(settings.controller.currentStatus, msg)
+
+	  	}
+    }
+}
+
+def sendIt(String msg) {
+	if (location.contactBookEnabled && settings.recipients) {
+		sendNotificationToContacts(msg, settings.recipients, [event: true]) 
+    }
+    else {
+		sendPush( msg )
+    }
 }
