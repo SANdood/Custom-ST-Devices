@@ -7,9 +7,6 @@
  *		zone events: switch1.z1off, switch2.z2off, switch3.z3off, ...		// up to 16 - allows for manual zone shutoff
  *  	
  */
-// TODO:
-// Validate Pause support
-//
 definition(
     name: "Spruce Smart Zone",
     namespace: "plaidsystems",
@@ -18,8 +15,7 @@ definition(
     category: "My Apps",
     iconUrl: "http://www.plaidsystems.com/smartthings/st_spruce_leaf_250f.png",
     iconX2Url: "http://www.plaidsystems.com/smartthings/st_spruce_leaf_250f.png",
-    iconX3Url: "http://www.plaidsystems.com/smartthings/st_spruce_leaf_250f.png",
-    oauth: false)
+    iconX3Url: "http://www.plaidsystems.com/smartthings/st_spruce_leaf_250f.png")
 
 preferences {
 	page(name: 'startPage')
@@ -28,8 +24,8 @@ preferences {
 def startPage() {
 	dynamicPage(name: 'startPage', title: 'Spruce Smart Zone setup V1.00', install: true, uninstall: true) {
 		section('') {
-            paragraph(image: 'http://www.plaidsystems.com/smartthings/st_settings.png', 
-					  title: 'Smart Zone settings', '')
+            paragraph(image: 'http://www.plaidsystems.com/smartthings/st_settings.png', title: 'Smart Zone settings', required: false,
+					  '')
     		label(title: 'Smart Zone Name:', description: 'Name this schedule', required: false)
 			input('controller', 'capability.switch', title: 'Spruce Irrigation Controller:', description: 'Select a Spruce controller',
 				required: true, multiple: false)
@@ -38,31 +34,35 @@ def startPage() {
 		}
 	    
    	 	section('') {
-			paragraph(image: 'http://www.plaidsystems.com/smartthings/st_flowers_225_r.png', title: 'Smart Zone Control', '')
+			paragraph(image: 'http://www.plaidsystems.com/smartthings/st_flowers_225_r.png', title: 'Smart Zone Control', required: false,
+					  '')
 			input(name: "zone", title: "Zone Number", multiple: false, 
 				metadata: [values: ['1','2','3','4','5','6','7','8','9','10','11','12','13','14','15','16']], type: "enum")
 		}
 		
 		section('') {
-			paragraph(image: 'http://www.plaidsystems.com/smartthings/st_sensor_200_r.png', title: 'Moisture Sensor Setup', '')
+			paragraph(image: 'http://www.plaidsystems.com/smartthings/st_sensor_200_r.png', title: 'Moisture Sensor Setup', required: false,
+					  '')
         	input("sensor", 'capability.relativeHumidityMeasurement', title: 'Spruce Moisture Sensor', value: "humidity", 
 				required: true, multiple: false)
-			input(name: "low", title: "Turn On when moisture is below", type: 'number', range: "10..60",
+            int lMin = 6
+			input(name: "low", title: "Turn On when moisture is below (5-59%)", type: 'number', range: "5..59",
 				required: true, submitOnChange: true)
-			input(name: "high", type: "number", title: "Turn Off when mositure reaches", range: "${low}..60", required: false)
+			input(name: "high", type: "number", title: "Turn Off when moisture reaches (${(low? low+1 : lMin)}-60%)", range: "${(low? low+1 : lMin)}..60", required: false)
 		}
 		
 		section('') {
-        	paragraph(image: 'http://www.plaidsystems.com/smartthings/st_timer.png', title: 'Maximum Watering Duration\n(1-60 minutes)', '')
+        	paragraph(image: 'http://www.plaidsystems.com/smartthings/st_timer.png', title: 'Maximum Watering Duration\n(1-60 minutes)',
+					  required: false, '')
 			input(name: "duration", title: "Duration?", type: "number", range: "1..60")
 		}
 	
 		section(''){
     		paragraph(image: 'http://www.plaidsystems.com/smartthings/st_pause.png', title: 'Pause Control Contacts & Switches (optional)',
-           		'When any selected contact sensor is opened or closed, or any selected switch is ' +
-            	'toggled, watering immediately stops and will not resume until all of the contact sensors and ' +
-            	'switches are reset.\n\nCaution: if all contacts or switches are left in the stop state, the dependent ' +
-            	'schedule(s) will never run.')
+					  required: false, 'When any selected contact sensor is opened or closed, or any selected switch is ' +
+            		  'toggled, watering immediately stops and will not resume until all of the contact sensors and ' +
+            		  'switches are reset.\n\nCaution: if all contacts or switches are left in the stop state, the dependent ' +
+            		  'schedule(s) will never run.')
         	input(name: 'contacts', title: 'Pause watering contact sensors', type: 'capability.contactSensor', multiple: true, 
             	required: false, submitOnChange: true)        
 			if (contacts)
@@ -79,12 +79,12 @@ def startPage() {
 		
 		section(''){
     		paragraph(image: 'http://www.plaidsystems.com/smartthings/st_spruce_controller_250.png',
-        		title: 'Controller Synchronization', required: false,
-            	'For multiple controllers only.  This schedule will wait for the selected controller to finish before ' +
-            	'starting. Do not set with a single controller!')
+        			  title: 'Controller Synchronization', required: false,  
+           			  'For multiple controllers only.  This schedule will wait for the selected controller to finish before ' +
+            		  'starting. Do not set with a single controller!')
        		input(name: 'sync', type: 'capability.switch', title: 'Monitored Spruce Controller', 
 				description: 'Only use this setting with multiple controllers', required: false, multiple: false)
-		}
+		} 
 	}
 }
 
