@@ -31,10 +31,11 @@
  *	0.10.2 - Beta release of Barry's updated version
  *	0.10.3 - Added support for setVacationFanMinOnTime() and deleteVacation()
  *	0.10.4 - Fixed temperatureDisplay
+ *	0.10.5 - Tuned up device notifications (icons, colors, etc.)
  *
  */
 
-def getVersionNum() { return "0.10.4" }
+def getVersionNum() { return "0.10.5" }
 private def getVersionLabel() { return "Ecobee Thermostat Version ${getVersionNum()}" }
 
  
@@ -219,7 +220,6 @@ metadata {
 			tileAttribute("device.coolingSetpoint", key: "COOLING_SETPOINT") {
 				attributeState("default", label:'${currentValue}°', unit:"dF")
 			}
-
         }
 
         // Show status of the API Connection for the Thermostat
@@ -230,33 +230,23 @@ metadata {
 		}
 
 		valueTile("temperature", "device.temperature", width: 2, height: 2, canChangeIcon: false, icon: "st.Home.home1") {
-			state("temperature", label:'${currentValue}°', unit:"F",
-				backgroundColors: getTempColors()
-			)
+			state("temperature", label:'${currentValue}°', unit:"F", backgroundColors: getTempColors())
 		}
         
-        // these are here just to get the colored balls in the Recently log in the Mobile App
+        // these are here just to get the colored icons to diplay in the Recently log in the Mobile App
         valueTile("heatingSetpoint", "device.heatingSetpoint", width: 2, height: 2, canChangeIcon: false, icon: "st.Home.home1") {
-			state("heatingSetpoint", label:'${currentValue}°', unit:"F",
-				backgroundColors: getTempColors()
-			)
+			state("heatingSetpoint", label:'${currentValue}°', unit:"F", backgroundColor:"#ff9c14")
 		}
         valueTile("coolingSetpoint", "device.coolingSetpoint", width: 2, height: 2, canChangeIcon: false, icon: "st.Home.home1") {
-			state("coolingSetpoint", label:'${currentValue}°', unit:"F",
-				backgroundColors: getTempColors()
-			)
+			state("coolingSetpoint", label:'${currentValue}°', unit:"F", backgroundColor:"#2db9e7")
 		}
         valueTile("thermostatSetpoint", "device.thermostatSetpoint", width: 2, height: 2, canChangeIcon: false, icon: "st.Home.home1") {
-			state("thermostatSetpoint", label:'${currentValue}°', unit:"F",
-				backgroundColors: getTempColors()
-			)
+			state("thermostatSetpoint", label:'${currentValue}°', unit:"F",	backgroundColors: getTempColors())
 		}
-        valueTile("weatherTemperature", "device.weatherTemperature", width: 2, height: 2, canChangeIcon: false, icon: "st.Home.home1") {
-			state("weatherTemperature", label:'${currentValue}°', unit:"F",
-				backgroundColors: getTempColors()
-			)
+        valueTile("weatherTemp", "device.weatherTemperature", width: 2, height: 2, canChangeIcon: false, icon: "st.Home.home1") {
+			state("weatherTemperature", label:'${currentValue}°', unit:"F",	backgroundColors: getTempColors())
 		}
-        
+		
 		standardTile("mode", "device.thermostatMode", width: 2, height: 2, inactiveLabel: false, decoration: "flat") {
 			state "off", action:"thermostat.heat", label: "Set Mode", nextState: "updating", icon: "https://raw.githubusercontent.com/StrykerSKS/SmartThings/master/smartapp-icons/ecobee/png/systemmode_off.png"
 			state "heat", action:"thermostat.cool",  label: "Set Mode", nextState: "updating", icon: "https://raw.githubusercontent.com/StrykerSKS/SmartThings/master/smartapp-icons/ecobee/png/systemmode_heat.png"
@@ -444,7 +434,7 @@ metadata {
 		}
 
         valueTile("humidity", "device.humidity", inactiveLabel: false, decoration: "flat", width: 2, height: 2) {
-			state "default", label: 'Humidity\n${currentValue}%', unit: "humidity" // Add a blue background signifying water?
+			state("default", label: '${currentValue}%', unit: "humidity", backgroundColor:"#d28de0")
 		}
         
         standardTile("motionState", "device.motion", width: 2, height: 2, inactiveLabel: false, decoration: "flat") {
@@ -594,71 +584,144 @@ def generateEvent(Map results) {
 	if(results) {
 		results.each { name, value ->
 			LOG("generateEvent() - In each loop: name: ${name}  value: ${value}", 4)
-			def isChange = false
 			def isDisplayed = true
             String tempDisplay = ""
-			def eventFront = [name: name, linkText: linkText, descriptionText: getThermostatDescriptionText(name, value, linkText), handlerName: name]
+			def eventFront = [name: name, linkText: linkText, handlerName: name]
 			def event = [:]
+			def isChange = isStateChange(device, name, value.toString())
 			
-			if (name=="temperature" || name=="heatingSetpoint" || name=="coolingSetpoint" || name=="weatherTemperature" ) {
-            	def precision = device.currentValue("decimalPrecision")
-                if (!precision) precision = isMetric ? 1 : 0
-				String sendValue = isMetric ? "${convertTemperatureIfNeeded(value.toDouble(), "F", precision.toInteger())}" : "${value}" //API return temperature value in F
-                LOG("generateEvent(): Temperature ${name} value: ${sendValue}", 5, this, "trace")
-				isChange = isStateChange(device, name, value.toString())
-				// isDisplayed = isChange
-				// Only send changed events/values
-				if (isChange) event = eventFront + [value: sendValue, isStateChange: true, displayed: true]
-				if (name=="temperature") {
-					// Generate the display value that will preserve decimal positions ending in 0
-                    //log.debug "precision ${precision} temperature ${value}"
-                    if (precision == 0) {
-                    	tempDisplay = value.toDouble().round(0).toString() + '°'
-                    } else {
-						tempDisplay = String.format( "%.${precision.toInteger()}f", value.toDouble().round(precision.toInteger())) + '°'
-                    }
-                    //log.debug "tempDisplay (${tempDisplay})"
-				}
-			} else if (name=="heatMode" || name=="coolMode" || name=="autoMode" || name=="auxHeatMode") {
-				isChange = isStateChange(device, name, value.toString())
-				if (isChange) event = eventFront + [value: value.toString(), isStateChange: true, displayed: false]
-			} else if (name=="thermostatOperatingState") {
-            	generateOperatingStateEvent(value.toString())
-                return
-			} else if (name=="equipmentOperatingState") {
-				generateEquipmentStateEvent(value)
-			} else if (name=="equipmentStatus") {
-				isChange = isStateChange(device, name, value.toString())
-				if (isChange) event = eventFront +  [value: value.toString(), isStateChange: true, displayed: false]
-            } else if (name=='lastPoll') {
-				isChange = isStateChange(device, name, value.toString())
-				if (isChange) event = eventFront + [value: value.toString(), isStateChange: true, displayed: true]
-			} else if (name=="debugLevel") {
-				isChange = isStateChange(device, name, value.toString())
-				if (isChange) event = eventFront +  [value: value.toString(), isStateChange: true, displayed: false]
-			} else if (name=="apiConnected") {
-            	// Treat as if always changed to ensure an updated value is shown on mobile device and in feed
-                isChange = isStateChange(device,name,value.toString());
-                if (isChange) event = eventFront + [value: value.toString(), isStateChange: true, displayed: true]
-            } else if (name=="weatherSymbol" && device.currentValue("timeOfDay") == "night") {
-            	// Check to see if it is night time, if so change to a night symbol
-                def symbolNum = value.toInteger() + 100
-                isChange = isStateChange(device, name, symbolNum.toString())
-				if (isChange) event = eventFront + [value: symbolNum.toString(), isStateChange: true, displayed: true]            
-            } else if (name=='heatRangeLow' || name=='heatRangeHigh' || nam =='coolRangeLow' || name=='coolRangeHigh' || name=='heatRange' || name=='coolRange' ) {
-				isChange = isStateChange(device, name, value.toString())
-				if (isChange) event = eventFront + [value: value.toString(), isStateChange: true, displayed: false]
-			} else {
-				isChange = isStateChange(device, name, value.toString())
-				// isDisplayed = isChange
-				if (isChange) event = eventFront + [value: value.toString(), isStateChange: true, displayed: true]
+			switch (name) {
+				case 'temperature':
+				case 'heatingSetpoint':
+				case 'coolingSetpoint':
+				case 'weatherTemperature':
+            		def precision = device.currentValue('decimalPrecision')
+                	if (!precision) precision = isMetric ? 1 : 0
+					String sendValue = isMetric ? "${convertTemperatureIfNeeded(value.toDouble(), "F", precision.toInteger())}" : "${value}" //API return temperature value in F
+                	// LOG("generateEvent(): Temperature ${name} value: ${sendValue}", 5, this, "trace")
+					if (isChange) event = eventFront + [value: sendValue,  descriptionText: getTemperatureDescriptionText(name, value, linkText), isStateChange: true, displayed: true]
+					if (name=="temperature") {
+						// Generate the display value that will preserve decimal positions ending in 0
+                    	if (precision == 0) {
+                    		tempDisplay = value.toDouble().round(0).toString() + '°'
+                    	} else {
+							tempDisplay = String.format( "%.${precision.toInteger()}f", value.toDouble().round(precision.toInteger())) + '°'
+                    	}
+					}
+					break;
+				
+				case 'thermostatOperatingState':
+					if (isChange) event = eventFront + [value: "${value}", descriptionText: "Thermostat is ${value}", isStateChange: true, displayed: false]
+                	break;
+				
+				case 'equipmentOperatingState':
+					if (isChange) event = eventFront + [value: "${value}", descriptionText: "Equipment is ${value}", isStateChange: true, displayed: true]
+					break;
+				
+				case 'equipmentStatus':
+				  	String descText = (value == 'idle') ? 'Equipment is idle' : "Equipment: ${value} running"
+					if (isChange) event = eventFront +  [value: "${value}", descriptionText: descText, isStateChange: true, displayed: false]
+					break;
+				
+           		case 'lastPoll':
+					if (isChange) event = eventFront + [value: "${value}", descriptionText: "Poll: ${value}", isStateChange: true, displayed: true]
+					break;
+				
+				case 'humidity':
+					if (isChange) event = eventFront + [value: "${value}", descriptionText: "Humidity is ${value}%", isStateChange: true, displayed: true]
+            		break;
+				
+				case 'humiditySetpoint':
+					if (isChange) event = eventFront + [value: "${value}", descriptionText: "Humidity setpoint is ${value}%", isStateChange: true, displayed: true]
+		            break;
+				
+				case 'currentProgramName':
+					if (isChange) event = eventFront + [value: "${value}", descriptionText: "Program is ${value}%", isStateChange: true, displayed: true]
+					break;
+				
+				case 'apiConnected':
+                	if (isChange) event = eventFront + [value: "${value}", descriptionText: "API Connection is ${value}", isStateChange: true, displayed: true]
+					break;
+				
+				case 'weatherSymbol':
+					// Check to see if it is night time, if so change to a night symbol
+					def symbolNum = value.toInteger()
+					if (device.currentValue('timeOfDay') == 'night') {
+						symbolNum = value.toInteger() + 100
+						isChange = isStateChange(device, name, symbolNum.toString())
+					}
+					if (isChange) event = eventFront + [value: "${symbolNum}", descriptionText: "Weather Symbol is ${symbolNum}", isStateChange: true, displayed: true]
+					break;
+				
+				case 'thermostatHold':
+					String descText = (value == "") ? 'Hold finished' : (value == 'hold') ? "Hold: ${device.currentValue('currentProgram')} (${device.currentValue('scheduledProgram')})" : "Hold for ${value}"
+					if (isChange) event = eventFront + [value: "${value}", descriptionText: descText, isStateChange: true, displayed: true]
+					break;
+				
+				case 'holdStatus': 
+					if (isChange) event = eventFront + [value: "${value}", descriptionText: "${value}", isStateChange: true, displayed: true]
+					break;
+				
+				case 'fanMinOnTime':
+					if (isChange) event = eventFront + [value: "${value}", descriptionText: "Fan On ${value} minutes per hour", isStateChange: true, displayed: true]
+					break;
+				
+				case 'thermostatMode':
+					if (isChange) event = eventFront + [value: "${value}", descriptionText: "Mode is ${value}", isStateChange: true, displayed: true]
+		            break;
+				
+        		case 'thermostatFanMode':
+					if (isChange) event = eventFront + [value: "${value}", descriptionText: "Fan Mode is ${value}", isStateChange: true, displayed: true]
+            		break;
+				
+				case 'debugEventFromParent':
+					event = eventFront + [value: "${value}", descriptionText: "-> ${value}", isStateChange: true, displayed: true]
+					break;
+				
+				// These are ones we don't need to display or provide descriptionText for (mostly internal or debug use)
+				case 'debugLevel':
+				case 'heatRangeLow':
+				case 'heatRangeHigh':
+				case 'coolRangeLow':
+				case 'coolRangeHigh':
+				case 'heatRange':
+				case 'coolRange':
+				case 'decimalPrecision':
+				case 'timeOfDay':
+				case 'heatMode':
+				case 'coolMode':
+				case 'autoMode':
+				case 'auxHeatMode':
+				case 'currentProgramId':
+				case 'currentProgram':
+				case 'scheduledProgramName':
+				case 'scheduledProgramId':
+				case 'scheduledProgram':
+				case 'heatStages':
+				case 'coolStages':
+				case 'hasHeatPump':
+				case 'hasForcedAir':
+				case 'hasElectric':
+				case 'hasBoiler':
+				case 'auxHeatMode':
+				case 'heatDifferential':
+				case 'coolDifferential':
+					if (isChange) event = eventFront +  [value: "${value}", isStateChange: true, displayed: false]
+					break;
+				
+				// everything else just gets displayed with generic text
+				default:
+					if (isChange) event = eventFront + [value: "${value}", descriptionText: "${name} is ${value}", isStateChange: true, displayed: true]			
+					break;
 			}
-			LOG("Out of loop, calling sendevent(${event}) for name ${name}", 5)
-			if (event != [:]) sendEvent(event)
+			if (event != [:]) {
+				LOG("generateEvent() - Out of switch{}, calling sendevent(${event})", 5)
+				sendEvent(event)
+			}
             if (tempDisplay != "") {
-        		event = [ name: 'temperatureDisplay', value: tempDisplay, linkText: linkText, descriptionText: getThermostatDescriptionText('temperatureDisplay', tempDisplay, linkText), handlerName: name, displayed: false ]
+        		event = [ name: 'temperatureDisplay', value: tempDisplay, linkText: linkText, descriptionText:"Temperature Display is ${tempDisplay}", displayed: false ]
         		sendEvent(event)
-            	LOG("tempDisplay, calling sendevent(${event})", 5)
+            	LOG("generateEvent() - Temperature updated, calling sendevent(${event})", 5)
         	}
 		}
 		generateSetpointEvent()
@@ -667,14 +730,10 @@ def generateEvent(Map results) {
 }
 
 //return descriptionText to be shown on mobile activity feed
-private getThermostatDescriptionText(name, value, linkText) {
-
+private getTemperatureDescriptionText(name, value, linkText) {
 	switch (name) {
 		case 'temperature':
 			return "Temperature is ${value}°"
-            break;
-        case 'temperatureDisplay':
-        	return "Display Temperature is ${value}"
             break;
 		case 'heatingSetpoint':
 			return "Heating setpoint is ${value}°"
@@ -682,35 +741,8 @@ private getThermostatDescriptionText(name, value, linkText) {
         case 'coolingSetpoint':
 			return "Cooling setpoint is ${value}°"
             break;
-		case 'thermostatMode':
-			return "Thermostat mode is ${value}"
-            break;
-        case 'thermostatFanMode':
-			return "Thermostat fan mode is ${value}"
-            break;
         case 'weatherTemperature':
         	return "Outside temperature is ${value}°"
-            break;
-        case 'decimalPrecision':
-        	return "Decimal precision set to ${value}"
-            break;
-        case 'equipmentStatus':
-			return (value == 'idle') ? "Equipment is idle" : "Equipment: ${value} running"
-            break;
-        case 'lastPoll':
-        	return "Poll: ${value}"
-            break;
-        case 'humidity':
-        	return "Humidity is ${value}%"
-            break;
-        case 'humiditySetpoint':
-        	return "Humidity setpoint is ${value}%"
-            break;
-		case 'thermostatHold':
-			return (value == "") ? 'Hold finished' : (value == 'hold') ? 'Hold for program or temp' : "Hold for ${value}"
-			break;
-		default:
-			return "${name} is ${value}"
             break;
 	}
 }
@@ -910,21 +942,6 @@ def generateQuickEvent(name, value) {
 def generateQuickEvent(name, value, pollIn) {
 	sendEvent(name: name, value: value, displayed: true)
     if (pollIn > 0) { runIn(pollIn, "poll") }
-}
-
-def generateFanModeEvent(fanMode) {
-	sendEvent(name: "thermostatFanMode", value: fanMode, descriptionText: "Thermostat fan is in ${mode} mode", displayed: true)
-}
-
-def generateOperatingStateEvent(operatingState) {
-	LOG("generateOperatingStateEvent with state: ${operatingState}", 4)
-	sendEvent(name: "thermostatOperatingState", value: operatingState, descriptionText: "Thermostat is ${operatingState}", displayed: true)
-}
-
-def generateEquipmentStateEvent(equipStat) {
-	LOG("generateEquipmentStateEvent() with state: ${equipStat}", 4)
-
-	sendEvent( name: "equipmentOperatingState", value: equipStat, descriptionText: "Equipment is ${equipStat}", displayed: true)		 
 }
 
 void setThermostatMode(String value) {
@@ -1162,21 +1179,29 @@ def generateSetpointEvent() {
 	LOG("Heating Setpoint = ${heatingSetpoint}", 4, null, "debug")
 	LOG("Cooling Setpoint = ${coolingSetpoint}", 4, null, "debug")
 
-	if (mode == "heat") {
-		sendEvent("name":"thermostatSetpoint", "value":heatingSetpoint.toString())
-	}
-	else if (mode == "cool") {
-		sendEvent("name":"thermostatSetpoint", "value":coolingSetpoint.toString())
-	} else if (mode == "auto" && !usingSmartAuto() ) {
-		// No Smart Auto, just regular auto
-		sendEvent("name":"thermostatSetpoint", "value":"Auto")
-	} else if (mode == "auto" && usingSmartAuto() ) {
-    	// Smart Auto Enabled
-        sendEvent("name":"thermostatSetpoint", "value":device.currentValue("temperature").toString())
-    } else if (mode == "off") {
-		sendEvent("name":"thermostatSetpoint", "value":"Off")
-	} else if (mode == "emergencyHeat") {
-		sendEvent("name":"thermostatSetpoint", "value":heatingSetpoint.toString())
+	switch (mode) {
+		case 'heat':
+		case 'emergencyHeat':
+			sendEvent(name:'thermostatSetpoint', value: "${heatingSetpoint}")
+			break;
+		
+		case 'cool':
+			sendEvent(name:'thermostatSetpoint', value: "${coolingSetpoint}")
+			break;
+		
+		case 'auto':
+			if (!usingSmartAuto()) {
+				// No Smart Auto, just regular auto
+				sendEvent(name:'thermostatSetpoint', value:"Auto (${heatingSetpoint}-${coolingSetpoint})")
+			} else {
+		    	// Smart Auto Enabled
+				sendEvent(name:'thermostatSetpoint', value: "${device.currentValue('temperature')}")
+			}
+			break;
+		
+		case 'off':
+			sendEvent(name:'thermostatSetpoint', value:'Off')
+			break;
 	}
 }
 
@@ -1377,6 +1402,7 @@ void alterSetpoint(temp) {
     runIn(15, "poll")
 }
 
+// This just updates the generic multiAttributeTile - text should match the Thermostat mAT
 def generateStatusEvent() {
 	def mode = device.currentValue("thermostatMode")
 	def heatingSetpoint = device.currentValue("heatingSetpoint")
@@ -1432,10 +1458,11 @@ def generateStatusEvent() {
 		statusText = "${mode}?"
 	}
 	LOG("Generate Status Event = ${statusText}", 4)
-	sendEvent("name":"thermostatStatus", "value":statusText, "description":statusText, displayed: true)
+	sendEvent(name:"thermostatStatus", value:statusText, description:statusText, displayed: false)
 }
 
-//generate custom mobile activity feeds event
+// generate custom mobile activity feeds event
+// (Need to clean this up to remove as many characters as possible, else it isn't readable in the Mobile App
 def generateActivityFeedsEvent(notificationMessage) {
 	sendEvent(name: "notificationMessage", value: "${device.displayName} ${notificationMessage}", descriptionText: "${device.displayName} ${notificationMessage}", displayed: true)
 }
@@ -1465,7 +1492,6 @@ private def cToF(temp) {
 private def fToC(temp) {
     return fahrenheitToCelsius(temp)
 }
-
 
 private def getImageURLRoot() {
 	return "https://raw.githubusercontent.com/StrykerSKS/SmartThings/master/smartapp-icons/ecobee/dark/"
@@ -1503,7 +1529,6 @@ private debugLevel(level=3) {
     
     return ( debugLvlNum >= wantedLvl )
 }
-
 
 private def LOG(message, level=3, child=null, logType="debug", event=false, displayEvent=false) {
 	def prefix = ""
