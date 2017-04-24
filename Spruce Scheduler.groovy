@@ -1,5 +1,5 @@
 /**
- *  Spruce Scheduler Pre-release V2.52.8 - Updated 10/05/2016, BAB
+ *  Spruce Scheduler Pre-release V2.53.1 - Updated 11/07/2016, BAB
  *
  *	
  *  Copyright 2015 Plaid Systems
@@ -13,45 +13,25 @@
  *  on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License
  *  for the specific language governing permissions and limitations under the License.
  *
- 
--------v2.51---------------------
- schedule function changed so runIn does not overwrite and cancel schedule
- -ln 769 schedule cycleOn-> checkOn
- -ln 841 checkOn function
- -ln 863 state.run = false
- 
--------Fixes
- -changed weather from def to Map
- -ln 968 if(runnowmap) -> pumpmap
- 
--------Fixes V2.2-------------
--History log messages condensed
--Seasonal adjustment redefined -> weekly & daily
--Learn mode redefined
--No Learn redefined to operate any available days
--ZoneSettings page redefined -> required to setup zones
--Weather rain updated to fix error with some weather stations
--Contact time delay added
--new plants moisture and season redefined
-*
-*
--------Fixes V2.1-------------
--Many fixes, code cleanup by Jason C
--open fields leading to unexpected errors
--setting and summary improvements
--multi controller support
--Day to run mapping
--Contact delays optimized
--Warning notification added
--manual start subscription added
+
+-------v2.53.1-------------------
+-ln 210: enableManual string modified
+-ln 496: added code for old ST app zoneNumber number to convert to enum for app update compatibility
+-ln 854: unschedule if NOT running to clear/correct manual subscription
+-ln 863: weather scheduled if rain OR seasonal enabled, both off is no weather check scheduled
+-ln 1083: added sync check to manual start
+-ln 1538: corrected contact delay minimum fro 5s to 10s
+
+-------v2.52---------------------
+ -Major revision by BAB
  *
  */
  
 definition(
-    name: "Spruce Scheduler v2.52",
+    name: "Spruce Scheduler",
     namespace: "plaidsystems",
     author: "Plaid Systems",
-    description: "Spruce automatic water scheduling app v2.52.9 (BAB)",
+    description: "Setup schedules for Spruce irrigation controller",
     category: "Green Living",
     iconUrl: "http://www.plaidsystems.com/smartthings/st_spruce_leaf_250f.png",
     iconX2Url: "http://www.plaidsystems.com/smartthings/st_spruce_leaf_250f.png",
@@ -93,7 +73,7 @@ preferences {
 }
  
 def startPage(){
-    dynamicPage(name: 'startPage', title: 'Spruce Smart Irrigation setup V2.52', install: true, uninstall: true)
+    dynamicPage(name: 'startPage', title: 'Spruce Smart Irrigation setup', install: true, uninstall: true)
     {                      
         section(''){
             href(name: 'globalPage', title: 'Schedule settings', required: false, page: 'globalPage',
@@ -226,9 +206,11 @@ private String startTimeString(){
     if (!startTime) return 'Please set!' else return hhmm(startTime)    
 }
 
-private String enableString(){
-	if(enable && enableManual) return 'On, Manual Enabled'
-    else if (enable) return 'On' else return 'Off'
+private String enableString(){	
+    if(enable && enableManual) return 'On & Manual Set'
+    else if (enable) return 'On & Manual Off' 
+    else if (enableManual) return 'Off & Manual Set'
+    else return 'Off'
 }
 
 private String waterStoppersString(){
@@ -504,11 +486,21 @@ def zonePage() {
 }
 
 // Verify whether a zone is active
+/*//Code for fresh install
 private boolean zoneActive(String zoneStr){
 	if (!zoneNumber) return false
     if (zoneNumber.contains(zoneStr)) return true	// don't display zones that are not selected
     return false
 }
+*/
+//code change for ST update file -> change input to zoneNumberEnum   
+private boolean zoneActive(z){	
+    if (!zoneNumberEnum && zoneNumber && zoneNumber >= z.toInteger()) return true        
+    else if (!zoneNumberEnum && zoneNumber && zoneNumber != z.toInteger()) return false
+    else if (zoneNumberEnum && zoneNumberEnum.contains(z)) return true
+    return false
+}
+
 
 private String zoneString() {
 	String numberString = 'Add zones to setup'
@@ -522,7 +514,7 @@ def zoneSettingsPage() {
 	dynamicPage(name: 'zoneSettingsPage', title: 'Zone Configuration') {
        	section(''){
         	//input (name: "zoneNumber", type: "number", title: "Enter number of zones to configure?",description: "How many valves do you have? 1-16", required: true)//, defaultValue: 16)
-            input 'zoneNumber', 'enum', title: 'Select zones to configure', multiple: true,	metadata: [values: ['1','2','3','4','5','6','7','8','9','10','11','12','13','14','15','16']]
+            input 'zoneNumberEnum', 'enum', title: 'Select zones to configure', multiple: true,	metadata: [values: ['1','2','3','4','5','6','7','8','9','10','11','12','13','14','15','16']]
             input 'gain', 'number', title: 'Increase or decrease all water times by this %, enter a negative or positive value, Default: 0', required: false, range: '-99..99'
 			paragraph image: 'http://www.plaidsystems.com/smartthings/st_sensor_200_r.png',
                       	title: 'Moisture sensor adapt mode',                      
@@ -876,15 +868,16 @@ def installSchedule(){
     	attemptRecovery() 									// clean up if we crashed earlier
     }
     else {
-    	resetEverything()
+    	unsubscribe()										//added back in to reset manual subscription
+        resetEverything()
     }
     subscribe(app, appTouch)								// enable the "play" button for this schedule
     Random rand = new Random()
     long randomOffset = 0
     
-    // always collect rainfall
+    // always collect rainfall    
     int randomSeconds = rand.nextInt(59)
-    schedule("${randomSeconds} 57 23 1/1 * ? *", getRainToday)		// capture today's rainfall just before midnight
+    if (settings.isRain || settings.isSeason) schedule("${randomSeconds} 57 23 1/1 * ? *", getRainToday)		// capture today's rainfall just before midnight
 
     if (settings.switches && settings.startTime && settings.enable){
 
@@ -980,11 +973,10 @@ private def resetEverything() {
 
 // unsubscribe from ALL events EXCEPT app.touch
 private def unsubAllBut() {
-	//unsubscribe()
 	unsubscribe(settings.switches)
 	unsubWaterStoppers()
 	if (settings.sync) unsubscribe(settings.sync)
-	//subscribe(app, appTouch)
+
 }
 
 // enable the "Play" button in SmartApp list
@@ -1103,35 +1095,39 @@ def manualStart(evt){
 	boolean running = attemptRecovery()		// clean up if prior run crashed
 	
 	if (settings.enableManual && !running && (settings.switches.currentStatus != 'pause')){
-        def runNowMap = []
-        runNowMap = cycleLoop(0)    
+        if (settings.sync && ( (settings.sync.currentSwitch != 'off') || settings.sync.currentStatus == 'pause') ) {            
+            note('skipping', "${app.label}: Manual run aborted, ${settings.sync.displayName} appears to be busy", 'a')            
+        	}
+		else {
+            def runNowMap = []
+            runNowMap = cycleLoop(0)    
 
-        if (runNowMap) { 
-        	atomicState.run = true
-        	settings.switches.programWait()
-			subscribe(settings.switches, 'switch.off', cycleOff)
+            if (runNowMap) { 
+                atomicState.run = true
+                settings.switches.programWait()
+                subscribe(settings.switches, 'switch.off', cycleOff)
 
-            runIn(60, cycleOn)   			// start water program
+                runIn(60, cycleOn)   			// start water program
 
-            								// note that manual DOES abide by waterStoppers (if configured)
-            String newString = ''
-            int tt = state.totalTime
-            if (tt) {
-                int hours = tt / 60			// DON'T Math.round this one
-                int mins = tt - (hours * 60)
-                String hourString = ''
-                String s = ''
-                if (hours > 1) s = 's'
-                if (hours > 0) hourString = "${hours} hour${s} & "
-                s = 's'
-                if (mins == 1) s = ''
-                newString = "run time: ${hourString}${mins} minute${s}:\n"
+                                                // note that manual DOES abide by waterStoppers (if configured)
+                String newString = ''
+                int tt = state.totalTime
+                if (tt) {
+                    int hours = tt / 60			// DON'T Math.round this one
+                    int mins = tt - (hours * 60)
+                    String hourString = ''
+                    String s = ''
+                    if (hours > 1) s = 's'
+                    if (hours > 0) hourString = "${hours} hour${s} & "
+                    s = 's'
+                    if (mins == 1) s = ''
+                    newString = "run time: ${hourString}${mins} minute${s}:\n"
+                }
+
+                note('active', "${app.label}: Manual run, watering in 1 minute: ${newString}${runNowMap}", 'd')                      
             }
-
-            note('active', "${app.label}: Manual run, watering in 1 minute: ${newString}${runNowMap}", 'd')                      
-        }
-        else note('skipping', "${app.label}: Manual run failed, check configuration", 'a')
-
+            else note('skipping', "${app.label}: Manual run failed, check configuration", 'a')
+		}
     } 
     else note('skipping', "${app.label}: Manual run aborted, ${settings.switches.displayName} appears to be busy", 'a')
 }
@@ -1171,21 +1167,6 @@ boolean busy(){
     	return false
     }    
     
-    // Check that the controller isn't waiting for a schedule to be provided from some schedule (could be this one)
-//    if ((csw == 'programWait') && (cst != 'active')) {		// wait && !active, some schedule crashed early in preCheck()
-//    	log.debug "switches ${csw}, status ${cst} (2nd)"
-//		resetEverything()									// might be us, so get back to the start state
-//    	return false
-//    }
-    
-
-
-    // Another schedule (not this one) is running (or paused), but are we even supposed to run today?
-    // To get here, the switches could be:
-    // 		on
-    //		off & pause
-    //		programOn (!programWait)
-    //		programWait
     if (isDay()) {											// Yup, we need to run today, so wait for the other schedule to finish
     	log.debug "switches ${csw}, status ${cst} (3rd)"
     	resetEverything()
@@ -1588,6 +1569,7 @@ def waterStart(evt){
 				break
 		}
 		// let cycleOn() change the status to Active - keep us paused until then
+		
         note('pause', "${app.label}: ${evt.displayName} ${cond}, watering in ${cDelay} seconds", 'c')
 	} 
 	else {
@@ -1861,16 +1843,7 @@ def note(String statStr, String msg, String msgType) {
       				sendNotificationEvent(spruceMsg)
       			}
       			break
-      /*		case 'w':
-      			notifyController = false						// dont bother with the weekly report
-      			if (settings.notify && settings.notify.contains('Weekly')) {
-      				sendIt(spruceMsg)
-      			}
-      			else if (settings.logAll) {
-      				sendNotificationEvent(spruceMsg)
-      			}
-      			break
-  	*/		case 'c':
+      		case 'c':
   				if (settings.notify && settings.notify.contains('Delays')) {
       				sendIt(spruceMsg)
       			}
@@ -2658,4 +2631,3 @@ def zoneSetPage16(){
 	state.app = 16
     zoneSetPage()
     }
-
