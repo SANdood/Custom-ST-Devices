@@ -1,5 +1,5 @@
 /**
- *  Spruce Scheduler Pre-release V2.52.8 - Updated 10/05/2016, BAB
+ *  Spruce Scheduler Pre-release V2.52.11 - Updated 08/16/2017, BAB
  *
  *	
  *  Copyright 2015 Plaid Systems
@@ -65,7 +65,7 @@ definition(
     name: "Spruce Scheduler v2.52",
     namespace: "plaidsystems",
     author: "Plaid Systems",
-    description: "Spruce automatic water scheduling app v2.52.10 (BAB)",
+    description: "Spruce automatic water scheduling app v2.52.11 (BAB)",
     category: "Green Living",
     iconUrl: "http://www.plaidsystems.com/smartthings/st_spruce_leaf_250f.png",
     iconX2Url: "http://www.plaidsystems.com/smartthings/st_spruce_leaf_250f.png",
@@ -519,27 +519,29 @@ def zonePage() {
     }
 }
 
+/*
 // Verify whether a zone is active
 private boolean zoneActive(String zoneStr){
 	if (!zoneNumber) return false
     if (zoneNumber.contains(zoneStr)) return true	// don't display zones that are not selected
     return false
 }
-/*
+*/
 //code change for ST update file -> change input to zoneNumberEnum   
 private boolean zoneActive(z){	
-    if (!zoneNumberEnum && zoneNumber && zoneNumber >= z.toInteger()) return true        
-    else if (!zoneNumberEnum && zoneNumber && zoneNumber != z.toInteger()) return false
+    if (!zoneNumberEnum && zoneNumber && zoneNumber.contains(z)) return true        
+    else if (!zoneNumberEnum && zoneNumber && !zoneNumber.contains(z)) return false
     else if (zoneNumberEnum && zoneNumberEnum.contains(z)) return true
-    return false
+    else return false
 }
-*/
+
 
 private String zoneString() {
 	String numberString = 'Add zones to setup'
-    if (zoneNumber) numberString = "Zones enabled: ${zoneNumber}"
-    if (learn) numberString = "${numberString}\nSensor mode: Adaptive"
-    else numberString = "${numberString}\nSensor mode: Delay"
+    if (!zoneNumberEnum && zoneNumber) numberString = "Zones enabled: ${zoneNumber}"
+    else if (zoneNumberEnum) numberString = "Zones enabled ${zoneNumberEnum}"
+    if (learn) numberString += "\nSensor mode: Adaptive"
+    else numberString += "\nSensor mode: Delay"
     return numberString
 }
 
@@ -560,55 +562,55 @@ def zoneSettingsPage() {
 }
 
 def zoneSetPage() {    
-    dynamicPage(name: 'zoneSetPage', title: "Zone ${atomicState.app} Setup") {
+    dynamicPage(name: 'zoneSetPage', title: "Zone ${state.app} Setup") {
         section(''){
-            paragraph image: "http://www.plaidsystems.com/smartthings/st_${atomicState.app}.png",             
+            paragraph image: "http://www.plaidsystems.com/smartthings/st_${state.app}.png",             
             title: 'Current Settings',            
-            "${display("${atomicState.app}")}"        
+            "${display("${state.app}")}"        
         }
         
         section(''){
-            input "name${atomicState.app}", 'text', title: 'Zone name?', required: false, defaultValue: "Zone ${atomicState.app}"
+            input "name${state.app}", 'text', title: 'Zone name?', required: false, defaultValue: "Zone ${state.app}"
         }
         
         section(''){            
 			 href(name: 'tosprinklerSetPage', title: "Sprinkler type: ${setString('zone')}", required: false, page: 'sprinklerSetPage',
-                image: "${getimage("${settings."zone${atomicState.app}"}")}",         
+                image: "${getimage("${settings."zone${state.app}"}")}",         
                 //description: "Set sprinkler nozzle type or turn zone off")
                 description: 'Sprinkler type descriptions')         
-             input "zone${atomicState.app}", 'enum', title: 'Sprinkler Type', multiple: false, required: false, defaultValue: 'Off', submitOnChange: true, metadata: [values: ['Off', 'Spray', 'Rotor', 'Drip', 'Master Valve', 'Pump']]
+             input "zone${state.app}", 'enum', title: 'Sprinkler Type', multiple: false, required: false, defaultValue: 'Off', submitOnChange: true, metadata: [values: ['Off', 'Spray', 'Rotor', 'Drip', 'Master Valve', 'Pump']]
         }
         
         section(''){            
             href(name: 'toplantSetPage', title: "Landscape Select: ${setString('plant')}", required: false, page: 'plantSetPage',
-                image: "${getimage("${settings["plant${atomicState.app}"]}")}",
+                image: "${getimage("${settings["plant${state.app}"]}")}",
                 //description: "Set landscape type")
                 description: 'Landscape type descriptions')
-            input "plant${atomicState.app}", 'enum', title: 'Landscape', multiple: false, required: false, submitOnChange: true, metadata: [values: ['Lawn', 'Garden', 'Flowers', 'Shrubs', 'Trees', 'Xeriscape', 'New Plants']]
+            input "plant${state.app}", 'enum', title: 'Landscape', multiple: false, required: false, submitOnChange: true, metadata: [values: ['Lawn', 'Garden', 'Flowers', 'Shrubs', 'Trees', 'Xeriscape', 'New Plants']]
             }  
          
         section(''){            
             href(name: 'tooptionSetPage', title: "Options: ${setString('option')}", required: false, page: 'optionSetPage',
-                image: "${getimage("${settings["option${atomicState.app}"]}")}",
+                image: "${getimage("${settings["option${state.app}"]}")}",
                 //description: "Set watering options")
                 description: 'Watering option descriptions')
-	        input "option${atomicState.app}", 'enum', title: 'Options', multiple: false, required: false, defaultValue: 'Cycle 2x', submitOnChange: true,metadata: [values: ['Slope', 'Sand', 'Clay', 'No Cycle', 'Cycle 2x', 'Cycle 3x']]
+	        input "option${state.app}", 'enum', title: 'Options', multiple: false, required: false, defaultValue: 'Cycle 2x', submitOnChange: true,metadata: [values: ['Slope', 'Sand', 'Clay', 'No Cycle', 'Cycle 2x', 'Cycle 3x']]
         }
         
         section(''){
             paragraph image: 'http://www.plaidsystems.com/smartthings/st_sensor_200_r.png',
                       title: 'Moisture sensor settings',                      
                       'Select a soil moisture sensor to monitor and control watering.  The soil moisture target value is set to a default value but can be adjusted to tune watering'
-            input "sensor${atomicState.app}", 'capability.relativeHumidityMeasurement', title: 'Select moisture sensor?', required: false, multiple: false
-            input "sensorSp${atomicState.app}", 'number', title: "Minimum moisture sensor target value, Setpoint: ${getDrySp(atomicState.app)}", required: false
+            input "sensor${state.app}", 'capability.relativeHumidityMeasurement', title: 'Select moisture sensor?', required: false, multiple: false
+            input "sensorSp${state.app}", 'number', title: "Minimum moisture sensor target value, Setpoint: ${getDrySp(state.app)}", required: false
         }
         
         section(''){
             paragraph image: 'http://www.plaidsystems.com/smartthings/st_timer.png',
                       title: 'Optional: Enter total watering time per week', 
                       'This value will replace the calculated time from other settings'
-                input "minWeek${atomicState.app}", 'number', title: 'Minimum water time per week.\nDefault: 0 = autoadjust', description: 'minutes per week', required: false
-                input "perDay${atomicState.app}", 'number', title: 'Guideline value for time per day, this divides minutes per week into watering days. Default: 20', defaultValue: '20', required: false
+                input "minWeek${state.app}", 'number', title: 'Minimum water time per week.\nDefault: 0 = autoadjust', description: 'minutes per week', required: false
+                input "perDay${state.app}", 'number', title: 'Guideline value for time per day, this divides minutes per week into watering days. Default: 20', defaultValue: '20', required: false
         }
     }
 }    
@@ -616,13 +618,13 @@ def zoneSetPage() {
 private String setString(String type) {
 	switch (type) {
 		case 'zone':
-    		if (settings."zone${atomicState.app}") return settings."zone${atomicState.app}" else return 'Not Set'
+    		if (settings."zone${state.app}") return settings."zone${state.app}" else return 'Not Set'
         	break
     	case 'plant':
-    		if (settings."plant${atomicState.app}") return settings."plant${atomicState.app}" else return 'Not Set'
+    		if (settings."plant${state.app}") return settings."plant${state.app}" else return 'Not Set'
     		break
 		case 'option':
-    		if (settings."option${atomicState.app}") return settings."option${atomicState.app}" else return 'Not Set'
+    		if (settings."option${state.app}") return settings."option${state.app}" else return 'Not Set'
     		break
     	default:
     		return '????'
@@ -630,11 +632,11 @@ private String setString(String type) {
 }
 
 def plantSetPage() { 
-    dynamicPage(name: 'plantSetPage', title: "${settings["name${atomicState.app}"]} Landscape Select") {
+    dynamicPage(name: 'plantSetPage', title: "${settings["name${state.app}"]} Landscape Select") {
         section(''){
-            paragraph image: 'http://www.plaidsystems.com/img/st_${atomicState.app}.png',             
-                title: "${settings["name${atomicState.app}"]}",
-                "Current settings ${display("${atomicState.app}")}"
+            paragraph image: 'http://www.plaidsystems.com/img/st_${state.app}.png',             
+                title: "${settings["name${state.app}"]}",
+                "Current settings ${display("${state.app}")}"
             //input "plant${state.app}", "enum", title: "Landscape", multiple: false, required: false, submitOnChange: true, metadata: [values: ['Lawn', 'Garden', 'Flowers', 'Shrubs', 'Trees', 'Xeriscape', 'New Plants']]
         }        
         section(''){
@@ -670,11 +672,11 @@ def plantSetPage() {
 }
  
 def sprinklerSetPage(){
-    dynamicPage(name: 'sprinklerSetPage', title: "${settings["name${atomicState.app}"]} Sprinkler Select") {
+    dynamicPage(name: 'sprinklerSetPage', title: "${settings["name${state.app}"]} Sprinkler Select") {
         section(''){
-            paragraph image: "http://www.plaidsystems.com/img/st_${atomicState.app}.png",             
-            title: "${settings["name${atomicState.app}"]}",
-            "Current settings ${display("${atomicState.app}")}"
+            paragraph image: "http://www.plaidsystems.com/img/st_${state.app}.png",             
+            title: "${settings["name${state.app}"]}",
+            "Current settings ${display("${state.app}")}"
             //input "zone${state.app}", "enum", title: "Sprinkler Type", multiple: false, required: false, defaultValue: 'Off', metadata: [values: ['Off', 'Spray', 'Rotor', 'Drip', 'Master Valve', 'Pump']]
             }
         section(''){
@@ -702,11 +704,11 @@ def sprinklerSetPage(){
 }
  
 def optionSetPage(){
-    dynamicPage(name: 'optionSetPage', title: "${settings["name${atomicState.app}"]} Options") {
+    dynamicPage(name: 'optionSetPage', title: "${settings["name${state.app}"]} Options") {
         section(''){
-            paragraph image: "http://www.plaidsystems.com/img/st_${atomicState.app}.png",             
-            title: "${settings["name${atomicState.app}"]}",
-            "Current settings ${display("${atomicState.app}")}"
+            paragraph image: "http://www.plaidsystems.com/img/st_${state.app}.png",             
+            title: "${settings["name${state.app}"]}",
+            "Current settings ${display("${state.app}")}"
             //input "option${state.app}", "enum", title: "Options", multiple: false, required: false, defaultValue: 'Cycle 2x', metadata: [values: ['Slope', 'Sand', 'Clay', 'No Cycle', 'Cycle 2x', 'Cycle 3x']]    
         }
         section(''){
@@ -738,8 +740,8 @@ def optionSetPage(){
 }
  
 def setPage(i){
-    if (i) atomicState.app = i
-    return atomicState.app
+    if (i) state.app = i
+    return state.app
 }
 
 private String getaZoneSummary(int zone){
@@ -904,7 +906,7 @@ def installSchedule(){
 		unsubscribe()
     	resetEverything()
     }
-    subscribe(app, appTouch)								// enable the "play" button for this schedule
+    /* if (settings.enable) */ subscribe(app, appTouch)								// enable the "play" button for this schedule
     Random rand = new Random()
     long randomOffset = 0
     
@@ -1405,7 +1407,7 @@ def cycleLoop(int i)
           	int runToday = 0
           	// if manual, or every day allowed, or zone uses a sensor, then we assume we can today
           	//  - preCheck() has already verified that today isDay()
-          	if ((i == 0) || (atomicState.daysAvailable == 7) || (settings."sensor${zone}")) {
+          	if ((i == 0) || /*(atomicState.daysAvailable == 7) ||*/ (settings."sensor${zone}")) {
           		runToday = 1	
           	} else {
           		dpw = getDPW(zone)									// figure out if we need to run (if we don't already know we do)
@@ -1846,11 +1848,11 @@ def moisture(int i)
     if (adjusted != 0) adjStr = ", ${plus}${adjusted} min"
     if (Math.abs(adjusted) > 1) adjStr = "${adjStr}s"
     if (diffHum >= 0.0) { 				// water only if ground is drier than SP
-    	moistureSum = "> ${settings."name${i}"}, Water: ${settings."sensor${i}"} @ ${latestHum}% (${spHum}%)${adjStr} (${newTPW} min/wk)\n"
+    	moistureSum = "> ${settings."name${i}"}, Water: ${settings."sensor${i}"} @ ${latestHum.round()}% (${spHum}%)${adjStr} (${newTPW} min/wk)\n"
         return [1, moistureSum]
     } 
     else { 							// not watering
-        moistureSum = "> ${settings."name${i}"}, Skip: ${settings."sensor${i}"} @ ${latestHum}% (${spHum}%)${adjStr} (${newTPW} min/wk)\n"
+        moistureSum = "> ${settings."name${i}"}, Skip: ${settings."sensor${i}"} @ ${latestHum.round()}% (${spHum}%)${adjStr} (${newTPW} min/wk)\n"
     	return [0, moistureSum]
     }
     return [0, moistureSum]
@@ -2155,62 +2157,30 @@ boolean isWeather(){
 
 	// get only the data we need
 	// Moved geolookup to installSchedule()
-    //SmartThings broke compound API calls on Auguest 2, 2017
-	//String featureString = 'forecast/conditions'
-	//if (settings.isSeason) featureString = "${featureString}/astronomy"
-    def WUerror = false
-    def WUerrorType = ''
-    def WUerrorDesc = ''
+	String featureString = 'forecast/conditions'
+	if (settings.isSeason) featureString = "${featureString}/astronomy"
 	if (isDebug) startMsecs= now()
-    Map wdata = getWeatherFeature('conditions', wzipcode)
-    if (wdata && wdata.response && (wdata.response.containsKey('error') && wdata.response.error.type != 'invalidFeature')) {
-    	WUerror = true
-        WUerrorType = wdata.response.error.type
-        WUerrorDesc = wdata.response.error.description
-    }
-    if (!WUerror) {
-    	Map forecastData = getWeatherFeature('forecast', wzipcode)
-        if (forecastData) {
-        	wdata << forecastData
-    		if (forecastData.response && (forecastData.response.containsKey('error') && forecastData.response.error.type != 'invalidFeature')) {
-            	WUerror = true
-                WUerrorType = forecastData.response.error.type
-                WUerrorDesc = forecastData.response.error.description
-            }
-        }
-    	if (!WUerror && settings.isSeason) {
-        	Map astronomyData = getWeatherFeature('astronomy', wzipcode)
-            if (astronomyData) {
-            	wdata << astronomyData
-        		if (astronomyData.response && (astronomyData.response.containsKey('error') && astronomyDdata.response.error.type != 'invalidFeature')) {
-                	WUerror = true
-	                WUerrorType = astronomyData.response.error.type
-    	            WUerrorDesc = astronomyData.response.error.description
-            	}
-            }
-        }
-    }
+    Map wdata = getWeatherFeature(featureString, wzipcode)
     if (isDebug) {
     	endMsecs = now()
     	log.debug "isWeather() getWeatherFeature elapsed time: ${endMsecs - startMsecs}ms"
     }
-    //if (wdata && wdata.response) {
-    //	if (isDebug) log.debug wdata.response
-	//	if (wdata.response.containsKey('error')) {
-    //    	if (wdata.response.error.type != 'invalidfeature') {
-    if (WUerror) {
-    	note('warning', "${app.label}: Please check Zipcode/PWS setting, error:\n${WUerrorType}: ${WUerrorDesc}" , 'a')
-        return false
-    } 
-    //        else {
+    if (wdata && wdata.response) {
+    	if (isDebug) log.debug wdata.response
+		if (wdata.response.containsKey('error')) {
+        	if (wdata.response.error.type != 'invalidfeature') {
+    			note('warning', "${app.label}: Please check Zipcode/PWS setting, error:\n${wdata.response.error.type}: ${wdata.response.error.description}" , 'a')
+        		return false
+            } 
+            else {
             	// Will find out which one(s) weren't reported later (probably never happens now that we don't ask for history)
-    //        	log.debug 'Rate limited...one or more WU features unavailable at this time.'
-    //        }
-	//	}
-    //} 
-    if (!wdata) {
+            	log.debug 'Rate limited...one or more WU features unavailable at this time.'
+            }
+		}
+    } 
+    else {
     	if (isDebug) log.debug 'wdata is null'
-    	note('warning', "${app.label}: Please check Zipcode/PWS setting, error: no weather features returned" , 'a')
+    	note('warning', "${app.label}: Please check Zipcode/PWS setting, error: null" , 'a')
     	return false
     }
     
@@ -2665,66 +2635,66 @@ def createDPWMap() {
 
 //transition page to populate app state - this is a fix for WP param
 def zoneSetPage1(){
-	atomicState.app = 1
+	state.app = 1
     zoneSetPage()
     }
 def zoneSetPage2(){
-	atomicState.app = 2
+	state.app = 2
     zoneSetPage()
     }
 def zoneSetPage3(){
-	atomicState.app = 3
+	state.app = 3
     zoneSetPage()
     }
 def zoneSetPage4(){
-	atomicState.app = 4
+	state.app = 4
     zoneSetPage()
     }
 def zoneSetPage5(){
-	atomicState.app = 5
+	state.app = 5
     zoneSetPage()
     }
 def zoneSetPage6(){
-	atomicState.app = 6
+	state.app = 6
     zoneSetPage()
     }
 def zoneSetPage7(){
-	atomicState.app = 7
+	state.app = 7
     zoneSetPage()
     }
 def zoneSetPage8(){
-	atomicState.app = 8
+	state.app = 8
     zoneSetPage()
     }
 def zoneSetPage9(i){
-	atomicState.app = 9
+	state.app = 9
     zoneSetPage()
     }
 def zoneSetPage10(){
-	atomicState.app = 10
+	state.app = 10
     zoneSetPage()
     }
 def zoneSetPage11(){
-	atomicState.app = 11
+	state.app = 11
     zoneSetPage()
     }
 def zoneSetPage12(){
-	atomicState.app = 12
+	state.app = 12
     zoneSetPage()
     }
 def zoneSetPage13(){
-	atomicState.app = 13
+	state.app = 13
     zoneSetPage()
     }
 def zoneSetPage14(){
-	atomicState.app = 14
+	state.app = 14
     zoneSetPage()
     }
 def zoneSetPage15(){
-	atomicState.app = 15
+	state.app = 15
     zoneSetPage()
     }
 def zoneSetPage16(){
-	atomicState.app = 16
+	state.app = 16
     zoneSetPage()
     }
